@@ -16,7 +16,6 @@ async def nextcloud_webhook(
     dedup: DeduplicationService = Depends(get_dedup_service),
 ):
     data = await request.json()
-    logger.info(f"Received Nextcloud event: {data.get('type')}")
 
     # Activity Streams 2.0 format
     event_type = data.get("type")
@@ -37,15 +36,16 @@ async def nextcloud_webhook(
 
     # 3. Handle Message
     if event_type == "Create" and obj.get("type") == "Note":
+        import json
         content_raw = obj.get("content", "")
-        
-        # Nextcloud Talk sends message content as a JSON string in some versions
         try:
-            import json
-            content_json = json.loads(content_raw)
-            text = content_json.get("message", content_raw)
-        except (json.JSONDecodeError, TypeError):
+            text = json.loads(content_raw).get("message", content_raw)
+        except Exception:
             text = content_raw
+
+        # Stop echo loop
+        if "[via Slack]" in text:
+            return {"status": "ignored"}
 
         actor_id = actor.get("id")
         room_token = target.get("id")
