@@ -21,6 +21,7 @@ async def slack_events(
     dedup: DeduplicationService = Depends(get_dedup_service),
 ):
     data = await request.json()
+    logger.info(f"Received Slack event: {data.get('type')}")
 
     # 1. Handle Slack URL verification
     if data.get("type") == "url_verification":

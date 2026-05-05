@@ -1,10 +1,12 @@
 import hmac
 import hashlib
 import time
+import logging
 from fastapi import Request, HTTPException, Depends
 from app.core.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 async def verify_slack_signature(request: Request):
@@ -31,6 +33,7 @@ async def verify_slack_signature(request: Request):
     ).hexdigest()}"
 
     if not hmac.compare_digest(my_signature, signature):
+        logger.error(f"Slack signature verification failed. Sig: {signature}")
         raise HTTPException(status_code=401, detail="Invalid Slack signature")
 
 
@@ -55,4 +58,5 @@ async def verify_nextcloud_signature(request: Request):
     ).hexdigest()
 
     if not hmac.compare_digest(my_signature, signature.lower()):
+        logger.error(f"Nextcloud signature verification failed. Sig: {signature}")
         raise HTTPException(status_code=401, detail="Invalid Nextcloud signature")
