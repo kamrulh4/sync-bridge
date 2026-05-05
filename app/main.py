@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from app.api import slack, nextcloud
 from app.core.config import get_settings
 from app.models.db import Base
