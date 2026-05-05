@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+sqlalchemy[asyncio]
+asyncpg
+redis
+httpx
+slack_sdk
+python-multipart
+pydantic-settings
+psycopg2-binary
+alembic
+pytest
+pytest-asyncio
+emoji
