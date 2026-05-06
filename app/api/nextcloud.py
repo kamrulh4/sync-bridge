@@ -39,8 +39,8 @@ async def nextcloud_webhook(
     actor_id = actor.get("id")
     room_token = target.get("id")
 
-    # 3. Handle Message
-    if event_type == "Create" and obj.get("type") == "Note":
+    # 3. Handle Message or File Notification
+    if event_type in ["Create", "Activity"] and obj.get("type") == "Note":
         import json
         content_raw = obj.get("content", "")
         try:
@@ -60,15 +60,15 @@ async def nextcloud_webhook(
                 handle_nextcloud_message_task, actor_id, room_token, text
             )
 
-    # 4. Handle File (Any Create event that is not a Note is likely a file/attachment)
-    elif event_type == "Create" and obj.get("type") != "Note":
+    # 4. Handle Direct File Uploads (if they don't come as a Note)
+    elif event_type in ["Create", "Activity"] and obj.get("type") != "Note":
         file_name = obj.get("name", "Unknown File")
         background_tasks.add_task(
             handle_nextcloud_file_task, actor_id, room_token, file_name
         )
     
-    elif event_type == "Create":
-        logger.info(f"Ignored Create event of type: {obj.get('type')} content: {obj.get('content')}")
+    elif event_type in ["Create", "Activity"]:
+        logger.info(f"Ignored {event_type} event of type: {obj.get('type')} content: {obj.get('content')}")
 
     return {"status": "ok"}
 
