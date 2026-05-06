@@ -70,6 +70,9 @@ class BridgeService:
         file_link = f"https://slack.com/files/{user_id}/{file_id}"
         
         # Resolve username if possible
+        username = await MappingService.get_internal_id(self.session, user_id, MappingType.USER)
+        display_name = username or user_id
+        
         message = f"{display_name} shared a file via Slack: {file_link}"
         
         # Deduplication: Mark this message
