@@ -52,8 +52,9 @@ async def nextcloud_webhook(
             params = json.loads(content_raw).get("parameters", {})
             file_info = params.get("file", {})
             file_name = file_info.get("name", "Unknown File")
+            file_link = file_info.get("link", "")
             background_tasks.add_task(
-                handle_nextcloud_file_task, actor_id, room_token, file_name
+                handle_nextcloud_file_task, actor_id, room_token, file_name, file_link
             )
         else:
             background_tasks.add_task(
@@ -63,8 +64,11 @@ async def nextcloud_webhook(
     # 4. Handle Direct File Uploads (if they don't come as a Note)
     elif event_type in ["Create", "Activity"] and obj.get("type") != "Note":
         file_name = obj.get("name", "Unknown File")
+        # For direct Create events, link might be in a different place, 
+        # but usually it's in the Activity Note. Fallback to empty if not found.
+        file_link = obj.get("link", "")
         background_tasks.add_task(
-            handle_nextcloud_file_task, actor_id, room_token, file_name
+            handle_nextcloud_file_task, actor_id, room_token, file_name, file_link
         )
     
     elif event_type in ["Create", "Activity"]:
@@ -81,9 +85,9 @@ async def handle_nextcloud_message_task(actor_id: str, room_token: str, text: st
         await bridge.handle_nextcloud_message(actor_id, room_token, text)
 
 
-async def handle_nextcloud_file_task(actor_id: str, room_token: str, file_name: str):
+async def handle_nextcloud_file_task(actor_id: str, room_token: str, file_name: str, file_link: str = ""):
     from app.main import async_session
 
     async with async_session() as session:
         bridge = BridgeService(session)
-        await bridge.handle_nextcloud_file(actor_id, room_token, file_name)
+        await bridge.handle_nextcloud_file(actor_id, room_token, file_name, file_link)
