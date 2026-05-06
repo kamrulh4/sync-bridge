@@ -48,16 +48,6 @@ async def nextcloud_webhook(
         except Exception:
             text = content_raw
 
-        # Stop echo loop
-        is_bot = actor_id == f"users/{settings.NEXTCLOUD_BOT_USERNAME}"
-        
-        if "[via Slack]" in text:
-            if is_bot:
-                logger.info(f"Ignoring bot-originated Nextcloud message from {actor_id}")
-                return {"status": "ignored"}
-            else:
-                return {"status": "ignored"}
-
         background_tasks.add_task(
             handle_nextcloud_message_task, actor_id, room_token, text
         )
