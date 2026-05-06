@@ -44,11 +44,7 @@ async def slack_events(
         user = event.get("user")
         channel = event.get("channel")
 
-        from app.main import async_session
-
-        async with async_session() as session:
-            bridge = BridgeService(session)
-            background_tasks.add_task(bridge.handle_slack_message, user, channel, text)
+        background_tasks.add_task(handle_slack_message_task, user, channel, text)
 
     # 5. Handle File Event
     elif event.get("type") == "file_shared":
@@ -56,12 +52,24 @@ async def slack_events(
         user_id = event.get("user_id")
         channel_id = event.get("channel_id")
 
-        from app.main import async_session
-
-        async with async_session() as session:
-            bridge = BridgeService(session)
-            background_tasks.add_task(
-                bridge.handle_slack_file, file_id, user_id, channel_id
-            )
+        background_tasks.add_task(
+            handle_slack_file_task, file_id, user_id, channel_id
+        )
 
     return {"ok": True}
+
+
+async def handle_slack_message_task(user: str, channel: str, text: str):
+    from app.main import async_session
+
+    async with async_session() as session:
+        bridge = BridgeService(session)
+        await bridge.handle_slack_message(user, channel, text)
+
+
+async def handle_slack_file_task(file_id: str, user_id: str, channel_id: str):
+    from app.main import async_session
+
+    async with async_session() as session:
+        bridge = BridgeService(session)
+        await bridge.handle_slack_file(file_id, user_id, channel_id)
