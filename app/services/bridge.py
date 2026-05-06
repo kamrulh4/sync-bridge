@@ -82,7 +82,7 @@ class BridgeService:
         await self.post_to_nextcloud(target_room, message)
 
     async def handle_nextcloud_file(
-        self, actor_id: str, room_token: str, file_name: str
+        self, actor_id: str, room_token: str, file_name: str, file_link: str = ""
     ):
         """Routes Nextcloud file event to Slack."""
         # We send Nextcloud file notifications to the Slack FILE SINK
@@ -90,6 +90,9 @@ class BridgeService:
         username = actor_id.replace("users/", "")
         
         message = f"{username} shared a file via Nextcloud: {file_name}"
+        if file_link:
+            message += f"\nFile Link: {file_link}"
+        
         await self.post_to_slack(target_channel, message)
 
     async def handle_slack_message(
