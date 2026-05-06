@@ -53,13 +53,14 @@ async def nextcloud_webhook(
         )
 
     # 4. Handle File
-    elif event_type == "Create" and obj.get("type") in ["Document", "Image", "Video"]:
+    elif event_type == "Create" and obj.get("type") in ["Document", "Image", "Video", "File", "Audio"]:
         file_name = obj.get("name", "Unknown File")
-        room_token = target.get("id")
-
         background_tasks.add_task(
             handle_nextcloud_file_task, actor_id, room_token, file_name
         )
+    
+    elif event_type == "Create":
+        logger.info(f"Ignored Create event of type: {obj.get('type')} content: {obj.get('content')}")
 
     return {"status": "ok"}
 
