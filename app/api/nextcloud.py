@@ -25,12 +25,6 @@ async def nextcloud_webhook(
     obj = data.get("object", {})
     target = data.get("target", {})
 
-    actor_id = actor.get("id")
-    # 0. Ignore if sent by the bot itself to prevent loops
-    if actor_id == f"users/{settings.NEXTCLOUD_BOT_USERNAME}":
-        logger.info(f"Ignoring bot-originated Nextcloud event from {actor_id}")
-        return {"status": "ignored"}
-
     event_id = obj.get("id")
 
     # 1. Ignore if no message id
@@ -42,6 +36,9 @@ async def nextcloud_webhook(
         logger.info(f"Duplicate Nextcloud event {event_id} ignored")
         return {"status": "ignored"}
 
+    actor_id = actor.get("id")
+    room_token = target.get("id")
+
     # 3. Handle Message
     if event_type == "Create" and obj.get("type") == "Note":
         import json
@@ -52,11 +49,14 @@ async def nextcloud_webhook(
             text = content_raw
 
         # Stop echo loop
+        is_bot = actor_id == f"users/{settings.NEXTCLOUD_BOT_USERNAME}"
+        
         if "[via Slack]" in text:
-            return {"status": "ignored"}
-
-        actor_id = actor.get("id")
-        room_token = target.get("id")
+            if is_bot:
+                logger.info(f"Ignoring bot-originated Nextcloud message from {actor_id}")
+                return {"status": "ignored"}
+            else:
+                return {"status": "ignored"}
 
         background_tasks.add_task(
             handle_nextcloud_message_task, actor_id, room_token, text
