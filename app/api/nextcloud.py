@@ -2,8 +2,10 @@ from fastapi import APIRouter, Request, Depends, BackgroundTasks
 from app.core.security import verify_nextcloud_signature
 from app.services.bridge import BridgeService
 from app.services.deduplication import get_dedup_service, DeduplicationService
+from app.core.config import get_settings
 import logging
 
+settings = get_settings()
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,12 @@ async def nextcloud_webhook(
     actor = data.get("actor", {})
     obj = data.get("object", {})
     target = data.get("target", {})
+
+    actor_id = actor.get("id")
+    # 0. Ignore if sent by the bot itself to prevent loops
+    if actor_id == f"users/{settings.NEXTCLOUD_BOT_USERNAME}":
+        logger.info(f"Ignoring bot-originated Nextcloud event from {actor_id}")
+        return {"status": "ignored"}
 
     event_id = obj.get("id")
 
@@ -50,26 +58,33 @@ async def nextcloud_webhook(
         actor_id = actor.get("id")
         room_token = target.get("id")
 
-        from app.main import async_session
+        background_tasks.add_task(
+            handle_nextcloud_message_task, actor_id, room_token, text
+        )
 
-        async with async_session() as session:
-            bridge = BridgeService(session)
-            background_tasks.add_task(
-                bridge.handle_nextcloud_message, actor_id, room_token, text
-            )
-
-    # 4. Handle File (Placeholder for Webhook Listeners or specialized objects)
+    # 4. Handle File
     elif event_type == "Create" and obj.get("type") in ["Document", "Image", "Video"]:
         file_name = obj.get("name", "Unknown File")
-        actor_id = actor.get("id")
         room_token = target.get("id")
 
-        from app.main import async_session
-
-        async with async_session() as session:
-            bridge = BridgeService(session)
-            background_tasks.add_task(
-                bridge.handle_nextcloud_file, actor_id, room_token, file_name
-            )
+        background_tasks.add_task(
+            handle_nextcloud_file_task, actor_id, room_token, file_name
+        )
 
     return {"status": "ok"}
+
+
+async def handle_nextcloud_message_task(actor_id: str, room_token: str, text: str):
+    from app.main import async_session
+
+    async with async_session() as session:
+        bridge = BridgeService(session)
+        await bridge.handle_nextcloud_message(actor_id, room_token, text)
+
+
+async def handle_nextcloud_file_task(actor_id: str, room_token: str, file_name: str):
+    from app.main import async_session
+
+    async with async_session() as session:
+        bridge = BridgeService(session)
+        await bridge.handle_nextcloud_file(actor_id, room_token, file_name)
