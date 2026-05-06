@@ -5,6 +5,7 @@ from app.core.config import get_settings
 from app.models.db import MappingType
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.mapping import MappingService
+from app.services.deduplication import get_dedup_service
 import logging
 
 settings = get_settings()
@@ -99,14 +100,25 @@ class BridgeService:
         # 3. Mention Translation
         text = await self.translate_slack_mentions(text)
 
-        # 4. Format as requested: [Name via Platform]: Message
-        formatted_message = f"[{display_name} via Slack]: {text}"
+        # 4. Format as requested: Name (via Slack): Message
+        formatted_message = f"{display_name} (via Slack): {text}"
+        
+        # 5. Deduplication: Mark this formatted message so we don't process it when it comes back
+        dedup = get_dedup_service()
+        await dedup.is_content_duplicate(formatted_message)
+        
         await self.post_to_nextcloud(settings.NEXTCLOUD_BRIDGE_ROOM_TOKEN, formatted_message)
 
     async def handle_nextcloud_message(
         self, nc_actor_id: str, room_token: str, text: str
     ):
         """Processes a message from Nextcloud and sends to Slack."""
+        # 1. Deduplication: If this exact text was recently sent FROM Slack, ignore it
+        dedup = get_dedup_service()
+        if await dedup.is_content_duplicate(text):
+            logger.info(f"Ignoring loopback message from Nextcloud: {text[:50]}...")
+            return
+
         if room_token != settings.NEXTCLOUD_BRIDGE_ROOM_TOKEN:
             return
 
@@ -116,8 +128,11 @@ class BridgeService:
         slack_user_id = await MappingService.get_external_id(
             self.session, username, MappingType.USER
         )
-        display_name = username
-
-        # Format as requested: [Name via Platform]: Message
-        formatted_message = f"[{username} via Nextcloud]: {text}"
+        
+        # 2. Format as requested: Name (via Nextcloud): Message
+        formatted_message = f"{username} (via Nextcloud): {text}"
+        
+        # 3. Deduplication: Mark this outgoing message too
+        await dedup.is_content_duplicate(formatted_message)
+        
         await self.post_to_slack(settings.SLACK_BRIDGE_CHANNEL_ID, formatted_message)
