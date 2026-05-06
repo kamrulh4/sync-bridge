@@ -70,10 +70,12 @@ class BridgeService:
         file_link = f"https://slack.com/files/{user_id}/{file_id}"
         
         # Resolve username if possible
-        username = await MappingService.get_internal_id(self.session, user_id, MappingType.USER)
-        display_name = username or user_id
-        
         message = f"{display_name} shared a file via Slack: {file_link}"
+        
+        # Deduplication: Mark this message
+        dedup = get_dedup_service()
+        await dedup.is_content_duplicate(message)
+        
         await self.post_to_nextcloud(target_room, message)
 
     async def handle_nextcloud_file(
