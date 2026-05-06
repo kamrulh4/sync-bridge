@@ -52,8 +52,8 @@ async def nextcloud_webhook(
             handle_nextcloud_message_task, actor_id, room_token, text
         )
 
-    # 4. Handle File
-    elif event_type == "Create" and obj.get("type") in ["Document", "Image", "Video", "File", "Audio"]:
+    # 4. Handle File (Any Create event that is not a Note is likely a file/attachment)
+    elif event_type == "Create" and obj.get("type") != "Note":
         file_name = obj.get("name", "Unknown File")
         background_tasks.add_task(
             handle_nextcloud_file_task, actor_id, room_token, file_name
