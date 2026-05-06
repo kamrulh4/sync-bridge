@@ -62,24 +62,30 @@ class BridgeService:
                 logger.error(f"Failed to post to Slack: {data.get('error')}")
 
     async def handle_slack_file(self, file_id: str, user_id: str, channel_id: str):
-        """Routes Slack file event to the Slack File Sink with a link."""
-        sink_channel = settings.SLACK_FILE_SINK_CHANNEL_ID
+        """Routes Slack file event to Nextcloud with a link."""
+        # We send Slack file notifications to the Nextcloud FILE SINK
+        target_room = settings.NEXTCLOUD_FILE_SINK_ROOM_TOKEN
         
         # Link generation
         file_link = f"https://slack.com/files/{user_id}/{file_id}"
-        message = f"File uploaded by <@{user_id}> in <#{channel_id}>.\nFile Link: {file_link}"
-        await self.post_to_slack(sink_channel, message)
+        
+        # Resolve username if possible
+        username = await MappingService.get_internal_id(self.session, user_id, MappingType.USER)
+        display_name = username or user_id
+        
+        message = f"{display_name} shared a file via Slack: {file_link}"
+        await self.post_to_nextcloud(target_room, message)
 
     async def handle_nextcloud_file(
         self, actor_id: str, room_token: str, file_name: str
     ):
-        """Routes Nextcloud file event to the Nextcloud File Sink."""
-        sink_room = settings.NEXTCLOUD_FILE_SINK_ROOM_TOKEN
+        """Routes Nextcloud file event to Slack."""
+        # We send Nextcloud file notifications to the Slack FILE SINK
+        target_channel = settings.SLACK_FILE_SINK_CHANNEL_ID
         username = actor_id.replace("users/", "")
         
-        # Note: Nextcloud direct file links usually require a webdav path or share token
-        message = f"File '{file_name}' uploaded by {username} in room {room_token}."
-        await self.post_to_nextcloud(sink_room, message)
+        message = f"{username} shared a file via Nextcloud: {file_name}"
+        await self.post_to_slack(target_channel, message)
 
     async def handle_slack_message(
         self, slack_user_id: str, channel_id: str, text: str
