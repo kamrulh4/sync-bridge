@@ -36,13 +36,20 @@ class MappingService:
     ):
         """
         Imports mappings from CSV.
-        Format expected: external_id,internal_id
+        Format expected: external_id, display_name, internal_id
+        (Falls back to 2-column format: external_id, internal_id)
         """
         reader = csv.reader(io.StringIO(csv_content))
+        next(reader, None)  # Skip header row
         for row in reader:
             if len(row) < 2:
                 continue
-            ext_id, int_id = row[0].strip(), row[1].strip()
+            ext_id = row[0].strip()
+            # Use column 2 (talk_username / room_token) if available, else column 1
+            int_id = row[2].strip() if len(row) >= 3 else row[1].strip()
+
+            if not ext_id or not int_id:
+                continue
 
             # Check if exists
             existing = await MappingService.get_internal_id(session, ext_id, m_type)
