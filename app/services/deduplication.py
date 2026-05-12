@@ -1,4 +1,5 @@
 import redis.asyncio as redis
+from fastapi import Request
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -14,10 +15,10 @@ class DeduplicationService:
         is_new = await self.redis.set(key, "1", ex=ttl, nx=True)
         return not is_new
 
-    async def is_content_duplicate(self, content: str, ttl: int = 5) -> bool:
+    async def is_content_duplicate(self, content: str, ttl: int = 60) -> bool:
         """
         Prevents the exact same text from being bridged back and forth.
-        TTL is short (5s) to allow natural repetition but stop instant loops.
+        TTL is increased (60s) to be safe against lag loops as per Florian's feedback.
         """
         import hashlib
         # Normalize content to avoid whitespace issues
@@ -34,8 +35,5 @@ class DeduplicationService:
         await self.redis.aclose()
 
 
-dedup_service = DeduplicationService()
-
-
-def get_dedup_service():
-    return dedup_service
+def get_dedup_service(request: Request):
+    return request.app.state.dedup

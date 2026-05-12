@@ -33,7 +33,15 @@ async def slack_events(
     if event.get("bot_id"):
         return {"ok": True}
 
-    # 3. Deduplication
+    # 3. Filter by Channel (Only process if it's the bridged channel)
+    channel = event.get("channel") or event.get("channel_id")
+    from app.core.config import get_settings
+    settings = get_settings()
+    
+    if channel != settings.SLACK_BRIDGE_CHANNEL_ID:
+        return {"ok": True}
+
+    # 4. Deduplication
     if await dedup.is_duplicate(event_id):
         logger.info(f"Duplicate Slack event {event_id} ignored")
         return {"ok": True}
@@ -44,7 +52,7 @@ async def slack_events(
         user = event.get("user")
         channel = event.get("channel")
 
-        background_tasks.add_task(handle_slack_message_task, user, channel, text)
+        background_tasks.add_task(handle_slack_message_task, user, channel, text, dedup)
 
     # 5. Handle File Event
     elif event.get("type") == "file_shared":
@@ -53,23 +61,23 @@ async def slack_events(
         channel_id = event.get("channel_id")
 
         background_tasks.add_task(
-            handle_slack_file_task, file_id, user_id, channel_id
+            handle_slack_file_task, file_id, user_id, channel_id, dedup
         )
 
     return {"ok": True}
 
 
-async def handle_slack_message_task(user: str, channel: str, text: str):
+async def handle_slack_message_task(user: str, channel: str, text: str, dedup: DeduplicationService):
     from app.main import async_session
 
     async with async_session() as session:
-        bridge = BridgeService(session)
+        bridge = BridgeService(session, dedup)
         await bridge.handle_slack_message(user, channel, text)
 
 
-async def handle_slack_file_task(file_id: str, user_id: str, channel_id: str):
+async def handle_slack_file_task(file_id: str, user_id: str, channel_id: str, dedup: DeduplicationService):
     from app.main import async_session
 
     async with async_session() as session:
-        bridge = BridgeService(session)
+        bridge = BridgeService(session, dedup)
         await bridge.handle_slack_file(file_id, user_id, channel_id)

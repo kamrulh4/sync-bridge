@@ -22,8 +22,15 @@ async def lifespan(app: FastAPI):
     # Startup: Create tables (In production, use migrations)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database tables created via lifespan.")
+    
+    # Initialize Deduplication Service
+    from app.services.deduplication import DeduplicationService
+    app.state.dedup = DeduplicationService()
+    
+    logger.info("Database tables created and Redis initialized.")
     yield
+    # Shutdown: Close Redis
+    await app.state.dedup.close()
 
 app = FastAPI(title="Nextcloud-Slack Bridge", version="1.0.0", lifespan=lifespan)
 
