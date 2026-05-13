@@ -20,6 +20,8 @@ async def slack_events(
     verify: None = Depends(verify_slack_signature),
     dedup: DeduplicationService = Depends(get_dedup_service),
 ):
+    from app.core.config import get_settings
+    settings = get_settings()
     data = await request.json()
 
     # 1. Handle Slack URL verification
@@ -30,15 +32,25 @@ async def slack_events(
     event_id = data.get("event_id")
 
     # 2. Ignore bot messages to prevent loops
-    if event.get("bot_id"):
+    if event.get("bot_id") or event.get("user") == settings.SLACK_BOT_USER_ID:
         return {"ok": True}
 
-    # 3. Filter by Channel (Only process if it's the bridged channel)
+    # 3. Filter by Channel (Dynamic Routing)
     channel = event.get("channel") or event.get("channel_id")
-    from app.core.config import get_settings
-    settings = get_settings()
+    from app.services.mapping import MappingService
+    from app.models.db import MappingType
+    from app.main import async_session
     
-    if channel != settings.SLACK_BRIDGE_CHANNEL_ID:
+    is_mapped = False
+    if channel == settings.SLACK_BRIDGE_CHANNEL_ID:
+        is_mapped = True
+    else:
+        async with async_session() as session:
+            nc_token = await MappingService.get_internal_id(session, channel, MappingType.CHANNEL)
+            if nc_token:
+                is_mapped = True
+
+    if not is_mapped:
         return {"ok": True}
 
     # 4. Deduplication
@@ -50,9 +62,9 @@ async def slack_events(
     if event.get("type") == "message" and not event.get("subtype"):
         text = event.get("text")
         user = event.get("user")
-        channel = event.get("channel")
+        ts = event.get("ts")
 
-        background_tasks.add_task(handle_slack_message_task, user, channel, text, dedup)
+        background_tasks.add_task(handle_slack_message_task, user, channel, text, ts, dedup)
 
     # 5. Handle File Event
     elif event.get("type") == "file_shared":
@@ -64,15 +76,30 @@ async def slack_events(
             handle_slack_file_task, file_id, user_id, channel_id, dedup
         )
 
+    # 6. Handle Reaction Events
+    elif event.get("type") in ["reaction_added", "reaction_removed"]:
+        reaction = event.get("reaction")
+        user_id = event.get("user")
+        item = event.get("item", {})
+        
+        if item.get("type") == "message":
+            slack_ts = item.get("ts")
+            channel_id = item.get("channel")
+            action = "add" if event["type"] == "reaction_added" else "remove"
+            
+            background_tasks.add_task(
+                handle_slack_reaction_task, user_id, channel_id, slack_ts, reaction, action, dedup
+            )
+
     return {"ok": True}
 
 
-async def handle_slack_message_task(user: str, channel: str, text: str, dedup: DeduplicationService):
+async def handle_slack_message_task(user: str, channel: str, text: str, ts: str, dedup: DeduplicationService):
     from app.main import async_session
 
     async with async_session() as session:
         bridge = BridgeService(session, dedup)
-        await bridge.handle_slack_message(user, channel, text)
+        await bridge.handle_slack_message(user, channel, text, ts)
 
 
 async def handle_slack_file_task(file_id: str, user_id: str, channel_id: str, dedup: DeduplicationService):
@@ -81,3 +108,13 @@ async def handle_slack_file_task(file_id: str, user_id: str, channel_id: str, de
     async with async_session() as session:
         bridge = BridgeService(session, dedup)
         await bridge.handle_slack_file(file_id, user_id, channel_id)
+
+
+async def handle_slack_reaction_task(
+    user_id: str, channel_id: str, slack_ts: str, reaction: str, action: str, dedup: DeduplicationService
+):
+    from app.main import async_session
+
+    async with async_session() as session:
+        bridge = BridgeService(session, dedup)
+        await bridge.handle_slack_reaction(user_id, channel_id, slack_ts, reaction, action)

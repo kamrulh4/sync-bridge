@@ -33,8 +33,21 @@ async def nextcloud_webhook(
     if actor_id == settings.NEXTCLOUD_BOT_USERNAME:
         return {"status": "ignored"}
 
-    # 2. Filter by Room (Only process if it's the bridged room)
-    if room_token != settings.NEXTCLOUD_BRIDGE_ROOM_TOKEN:
+    # 2. Filter by Room (Dynamic Routing)
+    from app.services.mapping import MappingService
+    from app.models.db import MappingType
+    from app.main import async_session
+    
+    is_mapped = False
+    if room_token == settings.NEXTCLOUD_BRIDGE_ROOM_TOKEN:
+        is_mapped = True
+    else:
+        async with async_session() as session:
+            slack_channel = await MappingService.get_external_id(session, room_token, MappingType.CHANNEL)
+            if slack_channel:
+                is_mapped = True
+
+    if not is_mapped:
         return {"status": "ignored"}
 
     # 3. Deduplication (Use data.id as primary event ID per Florian's feedback)
@@ -46,8 +59,20 @@ async def nextcloud_webhook(
         logger.info(f"Duplicate Nextcloud event {event_id} ignored")
         return {"status": "ignored"}
 
-    # 3. Handle Message or File Notification
-    if event_type in ["Create", "Activity"] and obj.get("type") == "Note":
+    # 4. Handle Reaction Events (Nextcloud Talk specific types)
+    elif (event_type in ["Create", "Activity", "Reaction"] and obj.get("type") == "Reaction") or data.get("verb") == "react":
+        emoji_char = obj.get("content", "")
+        # For reactions, Nextcloud usually puts the parent message ID in obj.target.id or similar
+        nc_msg_id = obj.get("target", {}).get("id") or obj.get("id") # Fallback
+        
+        if emoji_char and nc_msg_id:
+            action = "remove" if event_type == "Undo" else "add"
+            background_tasks.add_task(
+                handle_nextcloud_reaction_task, room_token, nc_msg_id, emoji_char, action, dedup
+            )
+
+    # 5. Handle Message or File Notification
+    elif event_type in ["Create", "Activity"] and obj.get("type") == "Note":
         content_raw = obj.get("content", "")
         try:
             text = json.loads(content_raw).get("message", content_raw)
@@ -64,14 +89,13 @@ async def nextcloud_webhook(
             )
         else:
             background_tasks.add_task(
-                handle_nextcloud_message_task, actor_id, room_token, text, dedup
+                handle_nextcloud_message_task, actor_id, room_token, text, obj.get("id"), dedup
             )
 
-    # 4. Handle Direct File Uploads (if they don't come as a Note)
+    # 5. Handle Direct File Uploads (if they don't come as a Note)
     elif event_type in ["Create", "Activity"] and obj.get("type") != "Note":
         file_name = obj.get("name", "Unknown File")
-        # For direct Create events, link might be in a different place, 
-        # but usually it's in the Activity Note. Fallback to empty if not found.
+        # For direct Create events, link might be in a different place
         file_link = obj.get("link", "")
         background_tasks.add_task(
             handle_nextcloud_file_task, actor_id, room_token, file_name, file_link, dedup
@@ -83,12 +107,12 @@ async def nextcloud_webhook(
     return {"status": "ok"}
 
 
-async def handle_nextcloud_message_task(actor_id: str, room_token: str, text: str, dedup: DeduplicationService):
+async def handle_nextcloud_message_task(actor_id: str, room_token: str, text: str, nc_msg_id: str, dedup: DeduplicationService):
     from app.main import async_session
 
     async with async_session() as session:
         bridge = BridgeService(session, dedup)
-        await bridge.handle_nextcloud_message(actor_id, room_token, text)
+        await bridge.handle_nextcloud_message(actor_id, room_token, text, nc_msg_id)
 
 
 async def handle_nextcloud_file_task(actor_id: str, room_token: str, file_name: str, file_link: str, dedup: DeduplicationService):
@@ -97,3 +121,13 @@ async def handle_nextcloud_file_task(actor_id: str, room_token: str, file_name: 
     async with async_session() as session:
         bridge = BridgeService(session, dedup)
         await bridge.handle_nextcloud_file(actor_id, room_token, file_name, file_link)
+
+
+async def handle_nextcloud_reaction_task(
+    room_token: str, nc_msg_id: str, emoji_char: str, action: str, dedup: DeduplicationService
+):
+    from app.main import async_session
+
+    async with async_session() as session:
+        bridge = BridgeService(session, dedup)
+        await bridge.handle_nextcloud_reaction(room_token, nc_msg_id, emoji_char, action)

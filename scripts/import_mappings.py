@@ -37,8 +37,8 @@ async def main():
     async with session_factory() as session:
         with open(file_path, "r") as f:
             content = f.read()
-            await MappingService.import_from_csv(session, content, m_type)
-        print(f"Imported {m_type_str} mappings from {file_path}")
+            count = await MappingService.import_from_csv(session, content, m_type)
+        print(f"Successfully processed {count} {m_type_str} mappings from {file_path}")
 
 
 if __name__ == "__main__":

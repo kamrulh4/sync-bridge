@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     SLACK_BOT_TOKEN: str
     SLACK_BRIDGE_CHANNEL_ID: str
     SLACK_FILE_SINK_CHANNEL_ID: str
+    SLACK_BOT_USER_ID: str | None = None
 
     # Nextcloud Configuration
     NEXTCLOUD_URL: str

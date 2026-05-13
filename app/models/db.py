@@ -31,3 +31,13 @@ class AuditLog(Base):
     content: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(50))  # 'success', 'failed', 'ignored'
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class MessageMapping(Base):
+    __tablename__ = "message_mappings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slack_ts: Mapped[str] = mapped_column(String(50), index=True)
+    talk_msg_id: Mapped[str] = mapped_column(String(50), index=True)
+    channel_id: Mapped[str] = mapped_column(String(255), index=True) # Nextcloud room token or Slack channel ID
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
