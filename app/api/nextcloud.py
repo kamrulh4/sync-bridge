@@ -36,7 +36,7 @@ async def nextcloud_webhook(
     # 2. Filter by Room (Dynamic Routing)
     from app.services.mapping import MappingService
     from app.models.db import MappingType
-    from app.main import async_session
+    from app.core.database import async_session
     
     is_mapped = False
     if room_token == settings.NEXTCLOUD_BRIDGE_ROOM_TOKEN:
@@ -108,7 +108,7 @@ async def nextcloud_webhook(
 
 
 async def handle_nextcloud_message_task(actor_id: str, room_token: str, text: str, nc_msg_id: str, dedup: DeduplicationService):
-    from app.main import async_session
+    from app.core.database import async_session
 
     async with async_session() as session:
         bridge = BridgeService(session, dedup)
@@ -116,7 +116,7 @@ async def handle_nextcloud_message_task(actor_id: str, room_token: str, text: st
 
 
 async def handle_nextcloud_file_task(actor_id: str, room_token: str, file_name: str, file_link: str, dedup: DeduplicationService):
-    from app.main import async_session
+    from app.core.database import async_session
 
     async with async_session() as session:
         bridge = BridgeService(session, dedup)
@@ -126,7 +126,7 @@ async def handle_nextcloud_file_task(actor_id: str, room_token: str, file_name: 
 async def handle_nextcloud_reaction_task(
     room_token: str, nc_msg_id: str, emoji_char: str, action: str, dedup: DeduplicationService
 ):
-    from app.main import async_session
+    from app.core.database import async_session
 
     async with async_session() as session:
         bridge = BridgeService(session, dedup)

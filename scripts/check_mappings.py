@@ -1,5 +1,5 @@
 import asyncio
-from app.main import async_session
+from app.core.database import async_session
 from sqlalchemy import select
 from app.models.db import Mapping, MappingType
 

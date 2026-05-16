@@ -11,9 +11,7 @@ settings = get_settings()
 logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL))
 logger = logging.getLogger(__name__)
 
-# Database Setup
-engine = create_async_engine(settings.DATABASE_URL)
-async_session = async_sessionmaker(engine, expire_on_commit=False)
+from app.core.database import engine, async_session
 
 from contextlib import asynccontextmanager
 

@@ -39,7 +39,7 @@ async def slack_events(
     channel = event.get("channel") or event.get("channel_id")
     from app.services.mapping import MappingService
     from app.models.db import MappingType
-    from app.main import async_session
+    from app.core.database import async_session
     
     is_mapped = False
     if channel == settings.SLACK_BRIDGE_CHANNEL_ID:
@@ -95,7 +95,7 @@ async def slack_events(
 
 
 async def handle_slack_message_task(user: str, channel: str, text: str, ts: str, dedup: DeduplicationService):
-    from app.main import async_session
+    from app.core.database import async_session
 
     async with async_session() as session:
         bridge = BridgeService(session, dedup)
@@ -103,7 +103,7 @@ async def handle_slack_message_task(user: str, channel: str, text: str, ts: str,
 
 
 async def handle_slack_file_task(file_id: str, user_id: str, channel_id: str, dedup: DeduplicationService):
-    from app.main import async_session
+    from app.core.database import async_session
 
     async with async_session() as session:
         bridge = BridgeService(session, dedup)
@@ -113,7 +113,7 @@ async def handle_slack_file_task(file_id: str, user_id: str, channel_id: str, de
 async def handle_slack_reaction_task(
     user_id: str, channel_id: str, slack_ts: str, reaction: str, action: str, dedup: DeduplicationService
 ):
-    from app.main import async_session
+    from app.core.database import async_session
 
     async with async_session() as session:
         bridge = BridgeService(session, dedup)
