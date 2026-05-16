@@ -28,9 +28,11 @@ async def nextcloud_webhook(
     
     actor_id = actor.get("id", "").replace("users/", "")
     room_token = target.get("id")
+    logger.info(f"NC webhook: event_type={event_type}, actor={actor_id}, room={room_token}, obj_type={obj.get('type')}, obj_name={obj.get('name')}")
 
     # 1. Ignore if bot message to prevent loops
     if actor_id == settings.NEXTCLOUD_BOT_USERNAME:
+        logger.info(f"NC webhook: IGNORED (bot actor)")
         return {"status": "ignored"}
 
     # 2. Filter by Room (Dynamic Routing)
@@ -48,6 +50,7 @@ async def nextcloud_webhook(
                 is_mapped = True
 
     if not is_mapped:
+        logger.info(f"NC webhook: IGNORED (room {room_token} not mapped)")
         return {"status": "ignored"}
 
     # 3. Deduplication
@@ -56,8 +59,10 @@ async def nextcloud_webhook(
         return {"status": "ignored"}
 
     if await dedup.is_duplicate(event_id):
-        logger.info(f"Duplicate Nextcloud event {event_id} ignored")
+        logger.info(f"NC webhook: IGNORED (duplicate event_id {event_id})")
         return {"status": "ignored"}
+
+    logger.info(f"NC webhook: PROCESSING event_id={event_id}")
 
     # --- Route the event ---
 
