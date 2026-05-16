@@ -26,7 +26,7 @@ async def nextcloud_webhook(
     obj = data.get("object", {})
     target = data.get("target", {})
     
-    actor_id = actor.get("id")
+    actor_id = actor.get("id", "").replace("users/", "")
     room_token = target.get("id")
 
     # 1. Ignore if bot message to prevent loops
@@ -73,7 +73,18 @@ async def nextcloud_webhook(
 
     # 5. Handle Message or File Notification
     elif event_type in ["Create", "Activity"] and obj.get("type") == "Note":
+        # Filter out system notes like reactions or other auto-messages
+        if obj.get("name") in ["reaction_added", "reaction_revoked", "system_message"]:
+            logger.info(f"Ignoring system note: {obj.get('name')}")
+            return {"status": "ignored"}
+
         content_raw = obj.get("content", "")
+        
+        # Filter out Nextcloud system messages (e.g. "[actor] reacted...")
+        if "[actor]" in content_raw:
+            logger.info(f"Ignoring Nextcloud system message: {content_raw}")
+            return {"status": "ignored"}
+
         try:
             text = json.loads(content_raw).get("message", content_raw)
         except Exception:

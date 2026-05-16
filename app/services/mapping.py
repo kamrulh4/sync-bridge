@@ -39,7 +39,7 @@ class MappingService:
             slack_ts=slack_ts, talk_msg_id=str(talk_msg_id), channel_id=channel_id
         )
         session.add(mapping)
-        await session.commit()
+        # Commit is handled by the caller
 
     @staticmethod
     async def get_talk_id_by_slack_ts(session: AsyncSession, slack_ts: str) -> str | None:

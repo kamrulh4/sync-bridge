@@ -65,7 +65,7 @@ class BridgeService:
 
     async def post_to_nextcloud(self, room_token: str, message: str) -> str | None:
         """Posts a message to Nextcloud Talk room and returns message ID."""
-        url = f"{settings.NEXTCLOUD_URL}/ocs/v2.php/apps/spreed/api/v1/chat/{room_token}"
+        url = f"{settings.NEXTCLOUD_URL}/ocs/v2.php/apps/spreed/api/v1/chat/{room_token}?format=json"
         auth = (settings.NEXTCLOUD_BOT_USERNAME, settings.NEXTCLOUD_BOT_PASSWORD)
 
         async with httpx.AsyncClient() as client:
@@ -257,23 +257,28 @@ class BridgeService:
             return
 
         # 4. Sync to Nextcloud
-        url = f"{settings.NEXTCLOUD_URL}/ocs/v2.php/apps/spreed/api/v1/chat/{nc_room_token}/reaction"
+        url = f"{settings.NEXTCLOUD_URL}/ocs/v2.php/apps/spreed/api/v1/chat/{nc_room_token}/reaction?format=json"
         auth = (settings.NEXTCLOUD_BOT_USERNAME, settings.NEXTCLOUD_BOT_PASSWORD)
         
         async with httpx.AsyncClient() as client:
-            if action == "add":
-                response = await client.post(
-                    url, auth=auth, json={"messageId": int(talk_msg_id), "reaction": nc_reaction},
-                    headers={"OCS-APIRequest": "true"}
-                )
-            else: # remove
-                response = await client.request(
-                    "DELETE", url, auth=auth, json={"messageId": int(talk_msg_id), "reaction": nc_reaction},
-                    headers={"OCS-APIRequest": "true"}
-                )
-            
-            if response.status_code not in [200, 201, 204]:
-                logger.error(f"Failed to sync reaction to Nextcloud: {response.text}")
+            try:
+                if action == "add":
+                    response = await client.post(
+                        url, auth=auth, json={"messageId": int(talk_msg_id), "reaction": nc_reaction},
+                        headers={"OCS-APIRequest": "true"}
+                    )
+                else: # remove
+                    response = await client.request(
+                        "DELETE", url, auth=auth, json={"messageId": int(talk_msg_id), "reaction": nc_reaction},
+                        headers={"OCS-APIRequest": "true"}
+                    )
+                
+                if response.status_code not in [200, 201, 204]:
+                    logger.error(f"Failed to sync reaction to Nextcloud: {response.text}")
+                else:
+                    logger.info(f"Successfully synced reaction {nc_reaction} ({action}) to Nextcloud msg {talk_msg_id}")
+            except Exception as e:
+                logger.error(f"Error calling Nextcloud reaction API: {str(e)}")
 
     async def handle_nextcloud_reaction(
         self, room_token: str, nc_msg_id: str, emoji_char: str, action: str
@@ -313,9 +318,14 @@ class BridgeService:
         }
         
         async with httpx.AsyncClient() as client:
-            response = await client.post(url, headers=headers, json=payload)
-            data = response.json()
-            if not data.get("ok"):
-                # "already_reacted" is common and can be ignored
-                if data.get("error") not in ["already_reacted", "no_reaction"]:
-                    logger.error(f"Failed to sync reaction to Slack: {data.get('error')}")
+            try:
+                response = await client.post(url, headers=headers, json=payload)
+                data = response.json()
+                if not data.get("ok"):
+                    # "already_reacted" is common and can be ignored
+                    if data.get("error") not in ["already_reacted", "no_reaction"]:
+                        logger.error(f"Failed to sync reaction to Slack: {data.get('error')}")
+                else:
+                    logger.info(f"Successfully synced reaction {slack_reaction} ({action}) to Slack ts {slack_ts}")
+            except Exception as e:
+                logger.error(f"Error calling Slack reaction API: {str(e)}")
