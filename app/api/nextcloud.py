@@ -50,7 +50,7 @@ async def nextcloud_webhook(
     if not is_mapped:
         return {"status": "ignored"}
 
-    # 3. Deduplication (Use data.id as primary event ID per Florian's feedback)
+    # 3. Deduplication
     event_id = data.get("id") or obj.get("id")
     if not event_id:
         return {"status": "ignored"}
@@ -59,11 +59,12 @@ async def nextcloud_webhook(
         logger.info(f"Duplicate Nextcloud event {event_id} ignored")
         return {"status": "ignored"}
 
-    # 4. Handle Reaction Events (Nextcloud Talk specific types)
-    elif (event_type in ["Create", "Activity", "Reaction"] and obj.get("type") == "Reaction") or data.get("verb") == "react":
+    # --- Route the event ---
+
+    # 4. Handle Reaction Events
+    if (event_type in ["Create", "Activity", "Reaction"] and obj.get("type") == "Reaction") or data.get("verb") == "react":
         emoji_char = obj.get("content", "")
-        # For reactions, Nextcloud usually puts the parent message ID in obj.target.id or similar
-        nc_msg_id = obj.get("target", {}).get("id") or obj.get("id") # Fallback
+        nc_msg_id = obj.get("target", {}).get("id") or obj.get("id")
         
         if emoji_char and nc_msg_id:
             action = "remove" if event_type == "Undo" else "add"
@@ -71,49 +72,59 @@ async def nextcloud_webhook(
                 handle_nextcloud_reaction_task, room_token, nc_msg_id, emoji_char, action, dedup
             )
 
-    # 5. Handle Message or File Notification
+    # 5. Handle Message Notification
     elif event_type in ["Create", "Activity"] and obj.get("type") == "Note":
-        # Filter out system notes like reactions or other auto-messages
-        if obj.get("name") in ["reaction_added", "reaction_revoked", "system_message"]:
-            logger.info(f"Ignoring system note: {obj.get('name')}")
+        # Filter out system notes (reaction_added, reaction_revoked, etc.)
+        obj_name = obj.get("name", "")
+        if obj_name in ["reaction_added", "reaction_revoked", "system_message"]:
+            logger.info(f"Ignoring system note: {obj_name}")
             return {"status": "ignored"}
 
         content_raw = obj.get("content", "")
         
-        # Filter out Nextcloud system messages (e.g. "[actor] reacted...")
-        if "[actor]" in content_raw:
-            logger.info(f"Ignoring Nextcloud system message: {content_raw}")
+        # Filter out Nextcloud system messages containing {actor} placeholders
+        if "{actor}" in content_raw or "[actor]" in content_raw:
+            logger.info(f"Ignoring Nextcloud system message: {content_raw[:80]}")
             return {"status": "ignored"}
 
         try:
-            text = json.loads(content_raw).get("message", content_raw)
+            parsed = json.loads(content_raw)
+            text = parsed.get("message", content_raw)
         except Exception:
             text = content_raw
 
-        if text == "{file}":
-            params = json.loads(content_raw).get("parameters", {})
-            file_info = params.get("file", {})
-            file_name = file_info.get("name", "Unknown File")
-            file_link = file_info.get("link", "")
-            background_tasks.add_task(
-                handle_nextcloud_file_task, actor_id, room_token, file_name, file_link, dedup
-            )
-        else:
-            background_tasks.add_task(
-                handle_nextcloud_message_task, actor_id, room_token, text, obj.get("id"), dedup
-            )
+        # Handle file messages
+        if text and text.strip() == "{file}":
+            try:
+                params = json.loads(content_raw).get("parameters", {})
+                file_info = params.get("file", {})
+                file_name = file_info.get("name", "Unknown File")
+                file_link = file_info.get("link", "")
+                background_tasks.add_task(
+                    handle_nextcloud_file_task, actor_id, room_token, file_name, file_link, dedup
+                )
+            except Exception:
+                pass
+            return {"status": "ignored"}
 
-    # 5. Handle Direct File Uploads (if they don't come as a Note)
-    elif event_type in ["Create", "Activity"] and obj.get("type") != "Note":
+        # Skip empty messages
+        if not text or not text.strip():
+            return {"status": "ignored"}
+
+        background_tasks.add_task(
+            handle_nextcloud_message_task, actor_id, room_token, text, obj.get("id"), dedup
+        )
+
+    # 6. Handle Direct File Uploads (non-Note objects)
+    elif event_type in ["Create", "Activity"] and obj.get("type") not in ["Note", "Reaction"]:
         file_name = obj.get("name", "Unknown File")
-        # For direct Create events, link might be in a different place
         file_link = obj.get("link", "")
         background_tasks.add_task(
             handle_nextcloud_file_task, actor_id, room_token, file_name, file_link, dedup
         )
-    
-    elif event_type in ["Create", "Activity"]:
-        logger.info(f"Ignored {event_type} event of type: {obj.get('type')} content: {obj.get('content')}")
+
+    else:
+        logger.info(f"Unhandled NC event: type={event_type} obj_type={obj.get('type')} obj_name={obj.get('name')}")
 
     return {"status": "ok"}
 

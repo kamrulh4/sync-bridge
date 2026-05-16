@@ -36,7 +36,9 @@ async def slack_events(
         return {"ok": True}
 
     # 3. Filter by Channel (Dynamic Routing)
-    channel = event.get("channel") or event.get("channel_id")
+    # For reaction events, channel is inside event.item.channel
+    item = event.get("item", {})
+    channel = event.get("channel") or event.get("channel_id") or item.get("channel")
     from app.services.mapping import MappingService
     from app.models.db import MappingType
     from app.core.database import async_session
