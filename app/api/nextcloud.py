@@ -65,9 +65,9 @@ async def nextcloud_webhook(
                 logger.info(f"NC webhook: IGNORED (loopback Slack message, talk_msg_id={obj.get('id')})")
                 return {"status": "ignored"}
 
-    # Ignore non-note bot-generated events from Nextcloud.
-    if raw_actor_id in bot_actor_ids and obj.get("type") != "Note":
-        logger.info("NC webhook: IGNORED (bot actor non-note event)")
+    # Ignore non-note, non-reaction bot-generated events from Nextcloud.
+    if raw_actor_id in bot_actor_ids and obj.get("type") not in ["Note", "Reaction"]:
+        logger.info("NC webhook: IGNORED (bot actor non-note/non-reaction event)")
         return {"status": "ignored"}
 
     # 3. Deduplication
@@ -90,6 +90,11 @@ async def nextcloud_webhook(
         action = "remove" if data.get("verb") == "unreact" or event_type == "Undo" else "add"
 
         if emoji_char and nc_msg_id:
+            reaction_dedup_key = f"reaction:nc:{room_token}:{nc_msg_id}:{emoji_char}"
+            if await dedup.is_content_duplicate(reaction_dedup_key):
+                logger.info(f"NC webhook: IGNORED (recently bridged reaction from Slack)")
+                return {"status": "ignored"}
+
             background_tasks.add_task(
                 handle_nextcloud_reaction_task, room_token, nc_msg_id, emoji_char, action, dedup
             )

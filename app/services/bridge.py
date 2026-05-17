@@ -320,6 +320,10 @@ class BridgeService:
         url = f"{settings.NEXTCLOUD_URL}/ocs/v2.php/apps/spreed/api/v1/chat/{nc_room_token}/reaction?format=json"
         auth = (settings.NEXTCLOUD_BOT_USERNAME, settings.NEXTCLOUD_BOT_PASSWORD)
         
+        # Store reaction dedup key to prevent Nextcloud webhook from echoing it back
+        reaction_dedup_key = f"reaction:nc:{nc_room_token}:{talk_msg_id}:{nc_reaction}"
+        await self.dedup.is_content_duplicate(reaction_dedup_key, ttl=60)
+
         async with httpx.AsyncClient() as client:
             try:
                 if action == "add":
