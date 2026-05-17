@@ -50,6 +50,25 @@ class BridgeService:
         """Converts Slack shortcodes to Unicode emojis."""
         return emoji.emojize(text, language="alias")
 
+    async def get_slack_user_display_name(self, slack_user_id: str) -> str:
+        """Fetches Slack user display name for a fallback when mapping is missing."""
+        if not slack_user_id:
+            return slack_user_id
+
+        url = "https://slack.com/api/users.info"
+        headers = {"Authorization": f"Bearer {settings.SLACK_BOT_TOKEN}"}
+        params = {"user": slack_user_id}
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers, params=params)
+            data = response.json()
+            if data.get("ok"):
+                user = data.get("user", {})
+                profile = user.get("profile", {})
+                return profile.get("display_name") or profile.get("real_name") or slack_user_id
+
+        return slack_user_id
+
     async def translate_slack_mentions(self, text: str) -> str:
         """Translates <@U123> to @username or @U123 based on mapping."""
         mention_pattern = r"<@([A-Z0-9]+)>"
@@ -59,7 +78,11 @@ class BridgeService:
             nc_username = await MappingService.get_internal_id(
                 self.session, slack_id, MappingType.USER
             )
-            replacement = f"@{nc_username}" if nc_username else f"@{slack_id}"
+            if nc_username:
+                replacement = f"@{nc_username}"
+            else:
+                slack_name = await self.get_slack_user_display_name(slack_id)
+                replacement = f"@{slack_name}" if slack_name else f"@{slack_id}"
             text = text.replace(f"<@{slack_id}>", replacement)
         return text
 
@@ -169,8 +192,12 @@ class BridgeService:
         nc_username = await MappingService.get_internal_id(
             self.session, slack_user_id, MappingType.USER
         )
-        display_name = nc_username or slack_user_id
+        if nc_username:
+            display_name = nc_username
+        else:
+            display_name = await self.get_slack_user_display_name(slack_user_id)
 
+        text = text or ""
         text = self.convert_emojis(text)
         text = await self.translate_slack_mentions(text)
         formatted_message = f"[{display_name} via Slack]: {text}"

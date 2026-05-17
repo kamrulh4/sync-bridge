@@ -23,6 +23,7 @@ async def slack_events(
     from app.core.config import get_settings
     settings = get_settings()
     data = await request.json()
+    logger.info(f"Slack webhook received: type={data.get('type')} event_id={data.get('event_id')} payload={data}")
 
     # 1. Handle Slack URL verification
     if data.get("type") == "url_verification":
@@ -61,12 +62,19 @@ async def slack_events(
         return {"ok": True}
 
     # 4. Handle Message Event
-    if event.get("type") == "message" and not event.get("subtype"):
-        text = event.get("text")
-        user = event.get("user")
-        ts = event.get("ts")
-
-        background_tasks.add_task(handle_slack_message_task, user, channel, text, ts, dedup)
+    if event.get("type") == "message":
+        subtype = event.get("subtype")
+        if subtype is None:
+            text = event.get("text")
+            user = event.get("user")
+            ts = event.get("ts")
+            background_tasks.add_task(handle_slack_message_task, user, channel, text, ts, dedup)
+        elif subtype == "file_share":
+            text = event.get("text") or ""
+            if text.strip():
+                user = event.get("user")
+                ts = event.get("ts")
+                background_tasks.add_task(handle_slack_message_task, user, channel, text, ts, dedup)
 
     # 5. Handle File Event
     elif event.get("type") == "file_shared":

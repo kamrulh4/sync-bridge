@@ -19,6 +19,7 @@ async def nextcloud_webhook(
     dedup: DeduplicationService = Depends(get_dedup_service),
 ):
     data = await request.json()
+    logger.info(f"Nextcloud webhook received: type={data.get('type')} id={data.get('id')} payload={data}")
 
     # Activity Streams 2.0 format
     event_type = data.get("type")
