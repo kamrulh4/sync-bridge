@@ -47,5 +47,12 @@ docker-compose exec app python scripts/import_mappings.py user user_mapping.csv
 docker-compose exec app python scripts/import_mappings.py channel channel_mapping.csv
 ```
 
+You can also manage mappings at runtime via the REST API without restarting the service:
+
+- `POST /mapping/user` with `{ "external_id": "U123", "internal_id": "john.doe" }`
+- `POST /mapping/channel` with `{ "external_id": "C12345678", "internal_id": "hybvehsr" }`
+- `POST /mapping/import?type=user` with `{ "csv_content": "..." }`
+- `POST /mapping/import?type=channel` with `{ "csv_content": "..." }`
+
 ## Architecture
 See the [Implementation Plan](plans/implementation_plan.md) for Phase 2 architectural details.

@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request
-from app.api import slack, nextcloud
+from app.api import slack, nextcloud, mappings
 from app.core.config import get_settings
 from app.models.db import Base
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
@@ -48,6 +48,7 @@ async def log_requests(request: Request, call_next):
 # Register Routes
 app.include_router(slack.router, prefix="/slack", tags=["slack"])
 app.include_router(nextcloud.router, prefix="/nextcloud", tags=["nextcloud"])
+app.include_router(mappings.router, prefix="/mapping", tags=["mapping"])
 
 
 @app.get("/health")

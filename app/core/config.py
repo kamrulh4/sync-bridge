@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     NEXTCLOUD_BOT_PASSWORD: str
     NEXTCLOUD_BRIDGE_ROOM_TOKEN: str
     NEXTCLOUD_FILE_SINK_ROOM_TOKEN: str
+    NEXTCLOUD_BOT_ACTOR_ID: str | None = None
 
     # Security
     SHARED_HMAC_SECRET: str

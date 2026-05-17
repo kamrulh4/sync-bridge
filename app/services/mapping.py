@@ -63,32 +63,47 @@ class MappingService:
     ):
         """
         Imports mappings from CSV.
-        Format expected: external_id, (name/ignore), internal_id, ...
+        Supported formats:
+          external_id, internal_id
+          external_id, name, internal_id
         """
         reader = csv.reader(io.StringIO(csv_content))
-        header = next(reader, None)  # Skip header row
-        
+        rows = list(reader)
+        if not rows:
+            return 0
+
+        first_row = rows[0]
+        header_keywords = {
+            "external_id",
+            "internal_id",
+            "slack_id",
+            "talk_username",
+            "channel_id",
+            "room_token",
+            "user",
+            "channel",
+        }
+        if any(cell.strip().lower() in header_keywords for cell in first_row):
+            rows = rows[1:]
+
         count = 0
-        for row in reader:
+        for row in rows:
             if not row or len(row) < 2:
                 continue
-            
+
             ext_id = row[0].strip()
-            # If 3+ columns, assume 3rd column is internal_id (index 2)
-            # If 2 columns, assume 2nd column is internal_id (index 1)
             int_id = row[2].strip() if len(row) >= 3 else row[1].strip()
 
             if not ext_id or not int_id:
                 continue
 
-            # Check if mapping already exists
             result = await session.execute(
                 select(Mapping).where(
                     Mapping.external_id == ext_id, Mapping.type == m_type
                 )
             )
             existing = result.scalar_one_or_none()
-            
+
             if existing:
                 if existing.internal_id != int_id:
                     existing.internal_id = int_id
@@ -102,3 +117,43 @@ class MappingService:
 
         await session.commit()
         return count
+
+    @staticmethod
+    async def upsert_mapping(
+        session: AsyncSession,
+        external_id: str,
+        internal_id: str,
+        m_type: MappingType,
+    ):
+        result = await session.execute(
+            select(Mapping).where(
+                Mapping.external_id == external_id, Mapping.type == m_type
+            )
+        )
+        mapping = result.scalar_one_or_none()
+        if mapping:
+            mapping.internal_id = internal_id
+        else:
+            mapping = Mapping(
+                type=m_type, external_id=external_id, internal_id=internal_id
+            )
+            session.add(mapping)
+
+        await session.commit()
+        return mapping
+
+    @staticmethod
+    async def delete_mapping(
+        session: AsyncSession, external_id: str, m_type: MappingType
+    ):
+        result = await session.execute(
+            select(Mapping).where(
+                Mapping.external_id == external_id, Mapping.type == m_type
+            )
+        )
+        mapping = result.scalar_one_or_none()
+        if mapping:
+            await session.delete(mapping)
+            await session.commit()
+            return True
+        return False

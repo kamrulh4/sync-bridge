@@ -26,13 +26,22 @@ async def nextcloud_webhook(
     obj = data.get("object", {})
     target = data.get("target", {})
     
-    actor_id = actor.get("id", "").replace("users/", "")
+    raw_actor_id = actor.get("id", "")
+    actor_id = raw_actor_id.replace("users/", "")
     room_token = target.get("id")
-    logger.info(f"NC webhook: event_type={event_type}, actor={actor_id}, room={room_token}, obj_type={obj.get('type')}, obj_name={obj.get('name')}")
+    logger.info(
+        f"NC webhook: event_type={event_type}, actor={actor_id}, room={room_token}, obj_type={obj.get('type')}, obj_name={obj.get('name')}"
+    )
 
-    # 1. Ignore if bot message to prevent loops
-    if actor_id == settings.NEXTCLOUD_BOT_USERNAME:
-        logger.info(f"NC webhook: IGNORED (bot actor)")
+    bot_actor_ids = {
+        settings.NEXTCLOUD_BOT_USERNAME,
+        f"users/{settings.NEXTCLOUD_BOT_USERNAME}",
+    }
+    if settings.NEXTCLOUD_BOT_ACTOR_ID:
+        bot_actor_ids.add(settings.NEXTCLOUD_BOT_ACTOR_ID)
+
+    if raw_actor_id in bot_actor_ids or actor_id == settings.NEXTCLOUD_BOT_USERNAME:
+        logger.info("NC webhook: IGNORED (bot actor)")
         return {"status": "ignored"}
 
     # 2. Filter by Room (Dynamic Routing)
@@ -51,7 +60,7 @@ async def nextcloud_webhook(
 
     if not is_mapped:
         logger.info(f"NC webhook: IGNORED (room {room_token} not mapped)")
-        return {"status": "ignored"}
+        return {"status": "ok"}
 
     # 3. Deduplication
     event_id = data.get("id") or obj.get("id")
@@ -67,12 +76,12 @@ async def nextcloud_webhook(
     # --- Route the event ---
 
     # 4. Handle Reaction Events
-    if (event_type in ["Create", "Activity", "Reaction"] and obj.get("type") == "Reaction") or data.get("verb") == "react":
+    if obj.get("type") == "Reaction" or data.get("verb") in {"react", "unreact"}:
         emoji_char = obj.get("content", "")
         nc_msg_id = obj.get("target", {}).get("id") or obj.get("id")
-        
+        action = "remove" if data.get("verb") == "unreact" or event_type == "Undo" else "add"
+
         if emoji_char and nc_msg_id:
-            action = "remove" if event_type == "Undo" else "add"
             background_tasks.add_task(
                 handle_nextcloud_reaction_task, room_token, nc_msg_id, emoji_char, action, dedup
             )
