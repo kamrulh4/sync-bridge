@@ -90,6 +90,7 @@ class BridgeService:
         """Posts a message to Nextcloud Talk room and returns message ID."""
         url = f"{settings.NEXTCLOUD_URL}/ocs/v2.php/apps/spreed/api/v1/chat/{room_token}?format=json"
         auth = (settings.NEXTCLOUD_BOT_USERNAME, settings.NEXTCLOUD_BOT_PASSWORD)
+        logger.info(f"Posting to Nextcloud: room={room_token} message={message}")
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -98,6 +99,7 @@ class BridgeService:
                 json={"message": message},
                 headers={"OCS-APIRequest": "true"},
             )
+            logger.info(f"Nextcloud response: status={response.status_code} body={response.text}")
             if response.status_code == 201:
                 data = response.json()
                 # Nextcloud Talk OCS API returns message ID in the response body
@@ -110,12 +112,14 @@ class BridgeService:
         """Posts a message to Slack channel and returns timestamp."""
         url = "https://slack.com/api/chat.postMessage"
         headers = {"Authorization": f"Bearer {settings.SLACK_BOT_TOKEN}"}
+        logger.info(f"Posting to Slack: channel={channel_id} message={message}")
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 url, headers=headers, json={"channel": channel_id, "text": message}
             )
             data = response.json()
+            logger.info(f"Slack response: {data}")
             if data.get("ok"):
                 return data.get("ts")
             else:
@@ -127,13 +131,16 @@ class BridgeService:
         url = "https://slack.com/api/files.info"
         headers = {"Authorization": f"Bearer {settings.SLACK_BOT_TOKEN}"}
         params = {"file": file_id}
+        logger.info(f"Fetching Slack file info: file_id={file_id}")
         async with httpx.AsyncClient() as client:
             response = await client.get(url, headers=headers, params=params)
             data = response.json()
+            logger.info(f"Slack files.info response: {data}")
             return data.get("file", {}) if data.get("ok") else {}
 
     async def handle_slack_file(self, file_id: str, user_id: str, channel_id: str):
         """Routes Slack file event to the SLACK FILE SINK channel."""
+        logger.info(f"Handling Slack file event: file_id={file_id} user_id={user_id} channel_id={channel_id}")
         target_channel = await MappingService.get_internal_id(
             self.session, "slack", MappingType.FILE_SINK
         ) or settings.SLACK_FILE_SINK_CHANNEL_ID
@@ -150,6 +157,7 @@ class BridgeService:
 
         username = await MappingService.get_internal_id(self.session, user_id, MappingType.USER)
         display_name = username or user_id
+        logger.info(f"Slack file details: name={file_name} link={file_link} display_name={display_name} target_channel={target_channel}")
 
         message = (
             f"📁 *File Uploaded*: {file_name}\n"
@@ -163,6 +171,7 @@ class BridgeService:
         self, actor_id: str, room_token: str, file_name: str, file_link: str = ""
     ):
         """Routes Nextcloud file event to the NEXTCLOUD FILE SINK room."""
+        logger.info(f"Handling Nextcloud file event: actor={actor_id} room={room_token} file_name={file_name} file_link={file_link}")
         target_room = await MappingService.get_internal_id(
             self.session, "talk", MappingType.FILE_SINK
         ) or settings.NEXTCLOUD_FILE_SINK_ROOM_TOKEN
@@ -180,6 +189,7 @@ class BridgeService:
         self, slack_user_id: str, channel_id: str, text: str, slack_ts: str
     ):
         """Processes a message from Slack and sends to Nextcloud."""
+        logger.info(f"Handling Slack message: slack_user_id={slack_user_id} channel_id={channel_id} slack_ts={slack_ts} text={text}")
         nc_room_token = await MappingService.get_internal_id(
             self.session, channel_id, MappingType.CHANNEL
         )
@@ -187,6 +197,7 @@ class BridgeService:
             if channel_id == settings.SLACK_BRIDGE_CHANNEL_ID:
                 nc_room_token = settings.NEXTCLOUD_BRIDGE_ROOM_TOKEN
             else:
+                logger.info(f"Slack message ignored: channel {channel_id} not mapped")
                 return
 
         nc_username = await MappingService.get_internal_id(
@@ -201,6 +212,7 @@ class BridgeService:
         text = self.convert_emojis(text)
         text = await self.translate_slack_mentions(text)
         formatted_message = f"[{display_name} via Slack]: {text}"
+        logger.info(f"Formatted Slack->Nextcloud message: {formatted_message}")
 
         dedup_key = f"slack:{nc_room_token}:{formatted_message}"
         if await self.dedup.is_content_duplicate(dedup_key):
@@ -215,10 +227,12 @@ class BridgeService:
             self.session.add(
                 AuditLog(source="slack", event_id=slack_ts, content=formatted_message[:255], status="success")
             )
+            logger.info(f"Slack message successfully posted to Nextcloud: talk_msg_id={nc_msg_id}")
         else:
             self.session.add(
                 AuditLog(source="slack", event_id=slack_ts, content=formatted_message[:255], status="failed")
             )
+            logger.error("Slack->Nextcloud post failed")
 
         await self.session.commit()
 
@@ -228,6 +242,7 @@ class BridgeService:
         """Processes a message from Nextcloud and sends to Slack."""
         username = nc_actor_id.replace("users/", "")
         formatted_message = f"[{username} via Nextcloud]: {text}"
+        logger.info(f"Handling Nextcloud message: actor={nc_actor_id} room={room_token} nc_msg_id={nc_msg_id} text={text}")
 
         dedup_key = f"nextcloud:{room_token}:{formatted_message}"
         if await self.dedup.is_content_duplicate(dedup_key):
@@ -241,6 +256,7 @@ class BridgeService:
             if room_token == settings.NEXTCLOUD_BRIDGE_ROOM_TOKEN:
                 slack_channel_id = settings.SLACK_BRIDGE_CHANNEL_ID
             else:
+                logger.info(f"Nextcloud message ignored: room {room_token} not mapped to Slack")
                 return
 
         slack_ts = await self.post_to_slack(slack_channel_id, formatted_message)
@@ -251,10 +267,12 @@ class BridgeService:
             self.session.add(
                 AuditLog(source="nextcloud", event_id=nc_msg_id, content=formatted_message[:255], status="success")
             )
+            logger.info(f"Nextcloud message successfully posted to Slack: slack_ts={slack_ts}")
         else:
             self.session.add(
                 AuditLog(source="nextcloud", event_id=nc_msg_id, content=formatted_message[:255], status="failed")
             )
+            logger.error("Nextcloud->Slack post failed")
 
         await self.session.commit()
 
@@ -304,7 +322,7 @@ class BridgeService:
                     )
                 
                 if response.status_code not in [200, 201, 204]:
-                    logger.error(f"Failed to sync reaction to Nextcloud: {response.text}")
+                    logger.error(f"Failed to sync reaction to Nextcloud: status={response.status_code} body={response.text}")
                 else:
                     logger.info(f"Successfully synced reaction {nc_reaction} ({action}) to Nextcloud msg {talk_msg_id}")
             except Exception as e:
@@ -342,10 +360,12 @@ class BridgeService:
             "timestamp": slack_ts,
         }
 
+        logger.info(f"Syncing reaction to Slack: channel={slack_channel_id} slack_ts={slack_ts} reaction={slack_reaction} action={action}")
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(url, headers=headers, json=payload)
                 data = response.json()
+                logger.info(f"Slack reactions API response: {data}")
                 if not data.get("ok"):
                     if data.get("error") not in ["already_reacted", "no_reaction"]:
                         logger.error(f"Failed to sync reaction to Slack: {data.get('error')}")

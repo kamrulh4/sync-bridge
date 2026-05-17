@@ -41,11 +41,6 @@ async def nextcloud_webhook(
     if settings.NEXTCLOUD_BOT_ACTOR_ID:
         bot_actor_ids.add(settings.NEXTCLOUD_BOT_ACTOR_ID)
 
-    if raw_actor_id in bot_actor_ids or actor_id == settings.NEXTCLOUD_BOT_USERNAME:
-        logger.info("NC webhook: IGNORED (bot actor)")
-        return {"status": "ignored"}
-
-    # 2. Filter by Room (Dynamic Routing)
     from app.services.mapping import MappingService
     from app.models.db import MappingType
     from app.core.database import async_session
@@ -62,6 +57,18 @@ async def nextcloud_webhook(
     if not is_mapped:
         logger.info(f"NC webhook: IGNORED (room {room_token} not mapped)")
         return {"status": "ok"}
+
+    # If this event is a Note that already maps to a Slack message, ignore it as a Slack->Nextcloud loopback.
+    if obj.get("type") == "Note" and obj.get("id"):
+        async with async_session() as session:
+            if await MappingService.get_slack_ts_by_talk_id(session, obj.get("id")):
+                logger.info(f"NC webhook: IGNORED (loopback Slack message, talk_msg_id={obj.get('id')})")
+                return {"status": "ignored"}
+
+    # Ignore non-note bot-generated events from Nextcloud.
+    if raw_actor_id in bot_actor_ids and obj.get("type") != "Note":
+        logger.info("NC webhook: IGNORED (bot actor non-note event)")
+        return {"status": "ignored"}
 
     # 3. Deduplication
     event_id = data.get("id") or obj.get("id")
@@ -105,8 +112,10 @@ async def nextcloud_webhook(
         try:
             parsed = json.loads(content_raw)
             text = parsed.get("message", content_raw)
+            logger.info(f"Parsed Nextcloud note content: message={text} parameters={parsed.get('parameters')}")
         except Exception:
             text = content_raw
+            logger.info(f"Nextcloud note content parse failed, raw content={content_raw}")
 
         # Handle file messages
         if text and text.strip() == "{file}":
@@ -115,17 +124,20 @@ async def nextcloud_webhook(
                 file_info = params.get("file", {})
                 file_name = file_info.get("name", "Unknown File")
                 file_link = file_info.get("link", "")
+                logger.info(f"Nextcloud file note detected: file_name={file_name} file_link={file_link}")
                 background_tasks.add_task(
                     handle_nextcloud_file_task, actor_id, room_token, file_name, file_link, dedup
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.error(f"Failed to parse Nextcloud file note: {exc}")
             return {"status": "ignored"}
 
         # Skip empty messages
         if not text or not text.strip():
+            logger.info("NC webhook: IGNORED (empty message content)")
             return {"status": "ignored"}
 
+        logger.info(f"NC webhook: queuing Nextcloud message task: actor={actor_id} room={room_token} msg_id={obj.get('id')} text={text}")
         background_tasks.add_task(
             handle_nextcloud_message_task, actor_id, room_token, text, obj.get("id"), dedup
         )

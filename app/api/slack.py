@@ -54,23 +54,27 @@ async def slack_events(
                 is_mapped = True
 
     if not is_mapped:
+        logger.info(f"Slack webhook ignored: channel {channel} not mapped")
         return {"ok": True}
 
     # 4. Deduplication
     if await dedup.is_duplicate(event_id):
-        logger.info(f"Duplicate Slack event {event_id} ignored")
+        logger.info(f"Slack webhook ignored: duplicate event {event_id}")
         return {"ok": True}
 
     # 4. Handle Message Event
     if event.get("type") == "message":
         subtype = event.get("subtype")
+        logger.info(f"Slack message event: subtype={subtype} channel={channel} ts={event.get('ts')} user={event.get('user')}")
         if subtype is None:
             text = event.get("text")
             user = event.get("user")
             ts = event.get("ts")
+            logger.info(f"Slack message payload: user={user} ts={ts} text={text}")
             background_tasks.add_task(handle_slack_message_task, user, channel, text, ts, dedup)
         elif subtype == "file_share":
             text = event.get("text") or ""
+            logger.info(f"Slack file_share message payload: text={text}")
             if text.strip():
                 user = event.get("user")
                 ts = event.get("ts")
@@ -91,6 +95,7 @@ async def slack_events(
         reaction = event.get("reaction")
         user_id = event.get("user")
         item = event.get("item", {})
+        logger.info(f"Slack reaction event: type={event.get('type')} user={user_id} reaction={reaction} item={item}")
         
         if item.get("type") == "message":
             slack_ts = item.get("ts")
@@ -100,6 +105,7 @@ async def slack_events(
             background_tasks.add_task(
                 handle_slack_reaction_task, user_id, channel_id, slack_ts, reaction, action, dedup
             )
+            logger.info(f"Slack reaction task queued: channel={channel_id} ts={slack_ts} action={action}")
 
     return {"ok": True}
 

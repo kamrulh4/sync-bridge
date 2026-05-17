@@ -62,6 +62,7 @@ async def log_requests(request: Request, call_next):
         return {"type": "http.request", "body": body}
     request._receive = receive
     response = await call_next(request)
+    logger.info(f"DEBUG: Response: status_code={response.status_code} url={request.url}")
     return response
 
 # Register Routes
