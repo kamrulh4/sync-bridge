@@ -137,6 +137,17 @@ async def nextcloud_webhook(
             logger.info("NC webhook: IGNORED (empty message content)")
             return {"status": "ignored"}
 
+        # Check if this message was recently bridged from Slack (race condition & loopback protection)
+        slack_dedup_key = f"slack:{room_token}:{text}"
+        if await dedup.is_content_duplicate(slack_dedup_key):
+            logger.info(f"NC webhook: IGNORED (recently bridged from Slack, matched dedup key: {slack_dedup_key})")
+            return {"status": "ignored"}
+
+        # Also, if the actor is the bot, and the text contains " via Slack]: " or starts with "📁 File Shared: ", ignore it
+        if raw_actor_id in bot_actor_ids and (" via Slack]: " in text or text.startswith("📁 File Shared: ")):
+            logger.info(f"NC webhook: IGNORED (bot actor loopback message: {text[:80]})")
+            return {"status": "ignored"}
+
         logger.info(f"NC webhook: queuing Nextcloud message task: actor={actor_id} room={room_token} msg_id={obj.get('id')} text={text}")
         background_tasks.add_task(
             handle_nextcloud_message_task, actor_id, room_token, text, obj.get("id"), dedup

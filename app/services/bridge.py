@@ -211,6 +211,18 @@ class BridgeService:
         text = text or ""
         text = self.convert_emojis(text)
         text = await self.translate_slack_mentions(text)
+
+        # Check if this message was recently bridged from Nextcloud (race condition & loopback protection)
+        nc_dedup_key = f"nextcloud:{nc_room_token}:{text}"
+        if await self.dedup.is_content_duplicate(nc_dedup_key):
+            logger.info(f"Skipping loopback message from Nextcloud: {text[:80]}")
+            return
+
+        # Also, if the text contains " via Nextcloud]: ", ignore it as a loopback
+        if " via Nextcloud]: " in text:
+            logger.info(f"Skipping bot loopback message from Nextcloud: {text[:80]}")
+            return
+
         formatted_message = f"[{display_name} via Slack]: {text}"
         logger.info(f"Formatted Slack->Nextcloud message: {formatted_message}")
 
