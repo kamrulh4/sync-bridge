@@ -111,8 +111,10 @@ class BridgeService:
 
     async def handle_slack_file(self, file_id: str, user_id: str, channel_id: str):
         """Routes Slack file event to the SLACK FILE SINK channel."""
-        target_channel = settings.SLACK_FILE_SINK_CHANNEL_ID
-        
+        target_channel = await MappingService.get_internal_id(
+            self.session, "slack", MappingType.FILE_SINK
+        ) or settings.SLACK_FILE_SINK_CHANNEL_ID
+
         file_info = await self.get_slack_file_info(file_id)
         file_name = file_info.get("name", "Unknown File")
         file_link = (
@@ -122,27 +124,33 @@ class BridgeService:
             or file_info.get("url_private")
             or ""
         )
-        
+
         username = await MappingService.get_internal_id(self.session, user_id, MappingType.USER)
         display_name = username or user_id
-        
+
         message = (
             f"📁 *File Uploaded*: {file_name}\n"
             f"*User*: {display_name}\n"
-            f"*Link*: {file_link}"
+            f"*Link*: {file_link or 'No link available'}"
         )
-        
+
         await self.post_to_slack(target_channel, message)
 
     async def handle_nextcloud_file(
         self, actor_id: str, room_token: str, file_name: str, file_link: str = ""
     ):
         """Routes Nextcloud file event to the NEXTCLOUD FILE SINK room."""
-        target_room = settings.NEXTCLOUD_FILE_SINK_ROOM_TOKEN
+        target_room = await MappingService.get_internal_id(
+            self.session, "talk", MappingType.FILE_SINK
+        ) or settings.NEXTCLOUD_FILE_SINK_ROOM_TOKEN
         username = actor_id.replace("users/", "")
-        
-        message = f"📁 File Shared: {file_name}\nUser: {username}\nLink: {file_link}"
-        
+
+        message = (
+            f"📁 File Shared: {file_name}\n"
+            f"User: {username}\n"
+            f"Link: {file_link or 'No link available'}"
+        )
+
         await self.post_to_nextcloud(target_room, message)
 
     async def handle_slack_message(

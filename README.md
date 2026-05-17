@@ -36,6 +36,8 @@ A bidirectional bridge between Nextcloud Talk and Slack, built with FastAPI, Pos
    docker-compose up --build
    ```
 
+By default, the app will auto-import `user_mapping.csv`, `channel_mapping.csv`, and `filesink_mapping.csv` from the repo root when it starts.
+
 ### Management & Scaling
 Phase 2 supports dynamic routing for multiple channels. Import your mappings using CSV:
 
@@ -45,6 +47,9 @@ docker-compose exec app python scripts/import_mappings.py user user_mapping.csv
 
 # Import 42 channels for scaling
 docker-compose exec app python scripts/import_mappings.py channel channel_mapping.csv
+
+# Import file sink configuration
+docker-compose exec app python scripts/import_mappings.py filesink filesink_mapping.csv
 ```
 
 You can also manage mappings at runtime via the REST API without restarting the service:

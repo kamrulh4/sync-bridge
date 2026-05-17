@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     # App Settings
     LOG_LEVEL: str = "INFO"
     DEBUG: bool = False
+    AUTO_IMPORT_MAPPINGS: bool = True
 
     model_config = SettingsConfigDict(env_file=".env")
 

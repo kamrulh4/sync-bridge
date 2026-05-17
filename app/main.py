@@ -20,11 +20,30 @@ async def lifespan(app: FastAPI):
     # Startup: Create tables (In production, use migrations)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
+    if settings.AUTO_IMPORT_MAPPINGS:
+        from pathlib import Path
+        from app.services.mapping import MappingService
+        from app.models.db import MappingType
+
+        repo_root = Path(__file__).resolve().parent.parent
+        mapping_files = {
+            MappingType.USER: repo_root / "user_mapping.csv",
+            MappingType.CHANNEL: repo_root / "channel_mapping.csv",
+            MappingType.FILE_SINK: repo_root / "filesink_mapping.csv",
+        }
+
+        async with async_session() as session:
+            for m_type, path in mapping_files.items():
+                if path.exists():
+                    content = path.read_text(encoding="utf-8")
+                    imported = await MappingService.import_from_csv(session, content, m_type)
+                    logger.info(f"Imported {imported} {m_type.value} mappings from {path.name}")
+
     # Initialize Deduplication Service
     from app.services.deduplication import DeduplicationService
     app.state.dedup = DeduplicationService()
-    
+
     logger.info("Database tables created and Redis initialized.")
     yield
     # Shutdown: Close Redis

@@ -12,7 +12,7 @@ settings = get_settings()
 async def main():
     if len(sys.argv) < 3:
         print(
-            "Usage: python scripts/import_mappings.py <type: user|channel> <file_path>"
+            "Usage: python scripts/import_mappings.py <type: user|channel|filesink> <file_path>"
         )
         return
 
@@ -23,8 +23,10 @@ async def main():
         m_type = MappingType.USER
     elif m_type_str == "channel":
         m_type = MappingType.CHANNEL
+    elif m_type_str == "filesink":
+        m_type = MappingType.FILE_SINK
     else:
-        print("Invalid mapping type. Use 'user' or 'channel'.")
+        print("Invalid mapping type. Use 'user', 'channel', or 'filesink'.")
         return
 
     if not os.path.exists(file_path):

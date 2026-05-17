@@ -82,6 +82,10 @@ class MappingService:
             "room_token",
             "user",
             "channel",
+            "platform",
+            "channel_name",
+            "slack_channel_name",
+            "talk_room_name",
         }
         if any(cell.strip().lower() in header_keywords for cell in first_row):
             rows = rows[1:]
@@ -92,7 +96,10 @@ class MappingService:
                 continue
 
             ext_id = row[0].strip()
-            int_id = row[2].strip() if len(row) >= 3 else row[1].strip()
+            if m_type == MappingType.FILE_SINK:
+                int_id = row[1].strip()
+            else:
+                int_id = row[2].strip() if len(row) >= 3 else row[1].strip()
 
             if not ext_id or not int_id:
                 continue

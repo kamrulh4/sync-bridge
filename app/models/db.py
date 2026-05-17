@@ -11,6 +11,7 @@ class Base(DeclarativeBase):
 class MappingType(enum.Enum):
     USER = "user"
     CHANNEL = "channel"
+    FILE_SINK = "file_sink"
 
 
 class Mapping(Base):

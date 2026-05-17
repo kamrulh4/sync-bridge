@@ -40,12 +40,29 @@ async def add_channel_mapping(payload: MappingItem):
     }
 
 
+@router.post("/filesink")
+async def add_filesink_mapping(payload: MappingItem):
+    async with async_session() as session:
+        mapping = await MappingService.upsert_mapping(
+            session, payload.external_id, payload.internal_id, MappingType.FILE_SINK
+        )
+    return {
+        "status": "ok",
+        "mapping": {"external_id": mapping.external_id, "internal_id": mapping.internal_id},
+    }
+
+
 @router.post("/import")
 async def import_mappings(
-    type: str = Query(..., pattern="^(user|channel)$"),
+    type: str = Query(..., pattern="^(user|channel|filesink)$"),
     payload: CsvImportRequest = None,
 ):
-    m_type = MappingType.USER if type == "user" else MappingType.CHANNEL
+    if type == "user":
+        m_type = MappingType.USER
+    elif type == "channel":
+        m_type = MappingType.CHANNEL
+    else:
+        m_type = MappingType.FILE_SINK
 
     async with async_session() as session:
         count = await MappingService.import_from_csv(session, payload.csv_content, m_type)
