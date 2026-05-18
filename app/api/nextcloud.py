@@ -65,8 +65,8 @@ async def nextcloud_webhook(
                 logger.info(f"NC webhook: IGNORED (loopback Slack message, talk_msg_id={obj.get('id')})")
                 return {"status": "ignored"}
 
-    # Ignore non-note, non-reaction bot-generated events from Nextcloud.
-    if raw_actor_id in bot_actor_ids and obj.get("type") not in ["Note", "Reaction"]:
+    # Ignore bot-generated events from Nextcloud that are not Note, Reaction, Like, or Undo.
+    if raw_actor_id in bot_actor_ids and obj.get("type") not in ["Note", "Reaction", "Like"] and event_type not in ["Like", "Undo"]:
         logger.info("NC webhook: IGNORED (bot actor non-note/non-reaction event)")
         return {"status": "ignored"}
 
@@ -84,11 +84,29 @@ async def nextcloud_webhook(
     # --- Route the event ---
 
     # 4. Handle Reaction Events
-    if obj.get("type") == "Reaction" or data.get("verb") in {"react", "unreact"}:
+    is_reaction = False
+    emoji_char = ""
+    nc_msg_id = None
+    action = "add"
+
+    if event_type == "Like":
+        is_reaction = True
+        emoji_char = data.get("content", "")
+        nc_msg_id = obj.get("id")
+        action = "add"
+    elif event_type == "Undo" and obj.get("type") == "Like":
+        is_reaction = True
+        emoji_char = obj.get("content", "")
+        target_note = obj.get("object", {})
+        nc_msg_id = target_note.get("id") if isinstance(target_note, dict) else target_note
+        action = "remove"
+    elif obj.get("type") == "Reaction" or data.get("verb") in {"react", "unreact"}:
+        is_reaction = True
         emoji_char = obj.get("content", "")
         nc_msg_id = obj.get("target", {}).get("id") or obj.get("id")
         action = "remove" if data.get("verb") == "unreact" or event_type == "Undo" else "add"
 
+    if is_reaction:
         if emoji_char and nc_msg_id:
             reaction_dedup_key = f"reaction:nc:{room_token}:{nc_msg_id}:{emoji_char}"
             if await dedup.is_content_duplicate(reaction_dedup_key):
@@ -98,6 +116,7 @@ async def nextcloud_webhook(
             background_tasks.add_task(
                 handle_nextcloud_reaction_task, room_token, nc_msg_id, emoji_char, action, dedup
             )
+        return {"status": "ok"}
 
     # 5. Handle Message Notification
     elif event_type in ["Create", "Activity"] and obj.get("type") == "Note":
