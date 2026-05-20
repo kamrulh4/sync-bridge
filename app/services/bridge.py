@@ -317,7 +317,7 @@ class BridgeService:
             return
 
         # 4. Sync to Nextcloud
-        url = f"{settings.NEXTCLOUD_URL}/ocs/v2.php/apps/spreed/api/v1/chat/{nc_room_token}/reaction?format=json"
+        url = f"{settings.NEXTCLOUD_URL}/ocs/v2.php/apps/spreed/api/v1/reaction/{nc_room_token}/{talk_msg_id}?format=json"
         auth = (settings.NEXTCLOUD_BOT_USERNAME, settings.NEXTCLOUD_BOT_PASSWORD)
         
         # Store reaction dedup key to prevent Nextcloud webhook from echoing it back
@@ -328,12 +328,12 @@ class BridgeService:
             try:
                 if action == "add":
                     response = await client.post(
-                        url, auth=auth, json={"messageId": int(talk_msg_id), "reaction": nc_reaction},
+                        url, auth=auth, json={"reaction": nc_reaction},
                         headers={"OCS-APIRequest": "true"}
                     )
                 else: # remove
                     response = await client.request(
-                        "DELETE", url, auth=auth, json={"messageId": int(talk_msg_id), "reaction": nc_reaction},
+                        "DELETE", url, auth=auth, json={"reaction": nc_reaction},
                         headers={"OCS-APIRequest": "true"}
                     )
                 
