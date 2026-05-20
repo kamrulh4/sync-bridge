@@ -58,8 +58,9 @@ async def nextcloud_webhook(
         logger.info(f"NC webhook: IGNORED (room {room_token} not mapped)")
         return {"status": "ok"}
 
-    # If this event is a Note that already maps to a Slack message, ignore it as a Slack->Nextcloud loopback.
-    if obj.get("type") == "Note" and obj.get("id"):
+    # If this event is a message Note that already maps to a Slack message, ignore it as a Slack->Nextcloud loopback.
+    # We only apply this to Create/Activity events, not Like/Undo (reactions), because reactions on bridged messages should sync.
+    if event_type in ["Create", "Activity"] and obj.get("type") == "Note" and obj.get("id"):
         async with async_session() as session:
             if await MappingService.get_slack_ts_by_talk_id(session, obj.get("id")):
                 logger.info(f"NC webhook: IGNORED (loopback Slack message, talk_msg_id={obj.get('id')})")
