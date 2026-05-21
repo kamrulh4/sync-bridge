@@ -33,7 +33,8 @@ async def slack_events(
     event_id = data.get("event_id")
 
     # 2. Ignore bot messages to prevent loops
-    if event.get("bot_id") or event.get("user") == settings.SLACK_BOT_USER_ID:
+    slack_user_id = event.get("user") or event.get("user_id")
+    if event.get("bot_id") or (settings.SLACK_BOT_USER_ID and slack_user_id == settings.SLACK_BOT_USER_ID):
         return {"ok": True}
 
     # 3. Filter by Channel (Dynamic Routing)
