@@ -72,9 +72,21 @@ async def nextcloud_webhook(
         return {"status": "ignored"}
 
     # 3. Deduplication
-    event_id = data.get("id") or obj.get("id")
-    if not event_id:
+    # Nextcloud Create/Like events don't have top-level IDs, they are inside the object.
+    # For reactions, we must append the event type and emoji to make the event ID unique,
+    # otherwise it will be rejected as a duplicate of the original message.
+    base_id = data.get("id") or obj.get("id")
+    if not base_id:
         return {"status": "ignored"}
+        
+    if event_type in ["Like", "Undo"]:
+        emoji_char = data.get("content") or obj.get("content", "")
+        event_id = f"{event_type}_{base_id}_{emoji_char}"
+    elif obj.get("type") == "Reaction" or data.get("verb") in {"react", "unreact"}:
+        emoji_char = obj.get("content", "")
+        event_id = f"Reaction_{base_id}_{emoji_char}_{data.get('verb', '')}"
+    else:
+        event_id = base_id
 
     if await dedup.is_duplicate(event_id):
         logger.info(f"NC webhook: IGNORED (duplicate event_id {event_id})")
