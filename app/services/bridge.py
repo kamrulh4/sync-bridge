@@ -139,11 +139,11 @@ class BridgeService:
             return data.get("file", {}) if data.get("ok") else {}
 
     async def handle_slack_file(self, file_id: str, user_id: str, channel_id: str):
-        """Routes Slack file event to the SLACK FILE SINK channel."""
+        """Routes Slack file event to the NEXTCLOUD FILE SINK room."""
         logger.info(f"Handling Slack file event: file_id={file_id} user_id={user_id} channel_id={channel_id}")
-        target_channel = await MappingService.get_internal_id(
-            self.session, "slack", MappingType.FILE_SINK
-        ) or settings.SLACK_FILE_SINK_CHANNEL_ID
+        target_room = await MappingService.get_internal_id(
+            self.session, "talk", MappingType.FILE_SINK
+        ) or settings.NEXTCLOUD_FILE_SINK_ROOM_TOKEN
 
         file_info = await self.get_slack_file_info(file_id)
         file_name = file_info.get("name", "Unknown File")
@@ -157,33 +157,33 @@ class BridgeService:
 
         username = await MappingService.get_internal_id(self.session, user_id, MappingType.USER)
         display_name = username or user_id
-        logger.info(f"Slack file details: name={file_name} link={file_link} display_name={display_name} target_channel={target_channel}")
+        logger.info(f"Slack file details: name={file_name} link={file_link} display_name={display_name} target_room={target_room}")
 
         message = (
-            f"📁 *File Uploaded*: {file_name}\n"
+            f"📁 *File Uploaded from Slack*: {file_name}\n"
             f"*User*: {display_name}\n"
             f"*Link*: {file_link or 'No link available'}"
         )
 
-        await self.post_to_slack(target_channel, message)
+        await self.post_to_nextcloud(target_room, message)
 
     async def handle_nextcloud_file(
         self, actor_id: str, room_token: str, file_name: str, file_link: str = ""
     ):
-        """Routes Nextcloud file event to the NEXTCLOUD FILE SINK room."""
+        """Routes Nextcloud file event to the SLACK FILE SINK channel."""
         logger.info(f"Handling Nextcloud file event: actor={actor_id} room={room_token} file_name={file_name} file_link={file_link}")
-        target_room = await MappingService.get_internal_id(
-            self.session, "talk", MappingType.FILE_SINK
-        ) or settings.NEXTCLOUD_FILE_SINK_ROOM_TOKEN
+        target_channel = await MappingService.get_internal_id(
+            self.session, "slack", MappingType.FILE_SINK
+        ) or settings.SLACK_FILE_SINK_CHANNEL_ID
         username = actor_id.replace("users/", "")
 
         message = (
-            f"📁 File Shared: {file_name}\n"
-            f"User: {username}\n"
-            f"Link: {file_link or 'No link available'}"
+            f"📁 *File Shared from Nextcloud*: {file_name}\n"
+            f"*User*: {username}\n"
+            f"*Link*: {file_link or 'No link available'}"
         )
 
-        await self.post_to_nextcloud(target_room, message)
+        await self.post_to_slack(target_channel, message)
 
     async def handle_slack_message(
         self, slack_user_id: str, channel_id: str, text: str, slack_ts: str
