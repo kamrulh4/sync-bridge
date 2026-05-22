@@ -90,22 +90,30 @@ class BridgeService:
         """Posts a message to Nextcloud Talk room and returns message ID."""
         url = f"{settings.NEXTCLOUD_URL}/ocs/v2.php/apps/spreed/api/v1/chat/{room_token}?format=json"
         auth = (settings.NEXTCLOUD_BOT_USERNAME, settings.NEXTCLOUD_BOT_PASSWORD)
-        logger.info(f"Posting to Nextcloud: room={room_token} message={message}")
+        logger.info(f"Posting to Nextcloud: url={url} room={room_token} message_preview={message[:80]}")
+        logger.info(f"Request metadata: auth_user={auth[0]} headers={{'OCS-APIRequest': 'true'}}")
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                url,
-                auth=auth,
-                json={"message": message},
-                headers={"OCS-APIRequest": "true"},
-            )
-            logger.info(f"Nextcloud response: status={response.status_code} body={response.text}")
-            if response.status_code == 201:
-                data = response.json()
-                # Nextcloud Talk OCS API returns message ID in the response body
-                return data.get("ocs", {}).get("data", {}).get("id")
-            else:
-                logger.error(f"Failed to post to Nextcloud: {response.text}")
+            try:
+                response = await client.post(
+                    url,
+                    auth=auth,
+                    json={"message": message},
+                    headers={"OCS-APIRequest": "true"},
+                )
+                logger.info(f"Nextcloud response status: {response.status_code}")
+                logger.info(f"Nextcloud response headers: {dict(response.headers)}")
+                logger.info(f"Nextcloud response body: {response.text}")
+                
+                if response.status_code == 201:
+                    data = response.json()
+                    # Nextcloud Talk OCS API returns message ID in the response body
+                    return data.get("ocs", {}).get("data", {}).get("id")
+                else:
+                    logger.error(f"Failed to post to Nextcloud: status={response.status_code} body={response.text}")
+                    return None
+            except Exception as e:
+                logger.error(f"Exception raised during post_to_nextcloud: {str(e)}")
                 return None
 
     async def post_to_slack(self, channel_id: str, message: str) -> str | None:
