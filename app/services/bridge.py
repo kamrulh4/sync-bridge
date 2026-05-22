@@ -164,7 +164,11 @@ class BridgeService:
         )
 
         username = await MappingService.get_internal_id(self.session, user_id, MappingType.USER)
-        display_name = username or user_id
+        if username:
+            display_name = username
+        else:
+            display_name = await self.get_slack_user_display_name(user_id)
+            
         logger.info(f"Slack file details: name={file_name} link={file_link} display_name={display_name} target_room={target_room}")
 
         message = (
