@@ -5,6 +5,7 @@ A bidirectional bridge between Nextcloud Talk and Slack, built with FastAPI, Pos
 ## Features
 - **Bidirectional Message Sync:** Real-time text and emoji synchronization between platforms.
 - **Phase 2 - Reaction Sync:** Bidirectional synchronization of emoji reactions (`👍`, `❤️`, `✅`, etc.).
+- **Phase 2 - Bidirectional Thread Reply Sync:** Synchronizes thread replies from Slack to Nextcloud (using `replyTo`) and replies from Nextcloud to Slack as threaded replies (using `thread_ts`), keeping threaded conversations visually nested on both platforms.
 - **Phase 2 - Multi-Channel Scaling:** Dynamic routing via Database supporting 42+ channels.
 - **Phase 2 - Global File Sink:** Isolated file event routing to dedicated central "file sink" channels/rooms.
 - **Security:** HMAC-SHA256 signature verification for all incoming webhooks (`X-Slack-Signature` & `X-Nextcloud-Talk-Signature`).
@@ -51,10 +52,10 @@ Log into your Nextcloud server terminal (or enter the Nextcloud Docker container
 
 ```bash
 # Example command inside the Nextcloud Docker container:
-docker exec -it <nextcloud_container> php occ talk:bot:install "PPH Bridge Bot" "YOUR_SHARED_HMAC_SECRET" "https://sync-bridge.billsheba.com/nextcloud/webhook" -f webhook -f response -f reaction
+docker exec -it <nextcloud_container> php occ talk:bot:install "PPH Bridge Bot" "YOUR_SHARED_HMAC_SECRET" "https://<your-bridge-domain>/nextcloud/webhook" -f webhook -f response -f reaction
 ```
 
-*(**Note:** Replace `YOUR_SHARED_HMAC_SECRET` with the exact secret from your bridge `.env` file).*
+*(**Note:** Replace `YOUR_SHARED_HMAC_SECRET` with the exact secret from your bridge `.env` file, and `https://<your-bridge-domain>` with your actual deployed bridge domain).*
 
 After installing, list your bots to find the new Bot ID:
 ```bash
@@ -65,6 +66,14 @@ Assign the bot to your Nextcloud Talk room (e.g., `hybvehsr`):
 ```bash
 docker exec -it <nextcloud_container> php occ talk:bot:setup <bot_id> hybvehsr
 ```
+
+> [!IMPORTANT]
+> **Updating Bot Hook URL during Server Deployment / Migration:**
+> If you are deploying the bridge to a new production domain or changing domains, you must update the bot's webhook endpoint registered in Nextcloud. You can do this by running:
+> ```bash
+> docker exec -it <nextcloud_container> php occ talk:bot:update <bot_id> --url "https://<new-production-domain>/nextcloud/webhook"
+> ```
+> *(Or alternatively, remove the old bot using `php occ talk:bot:remove <bot_id>` and install a new one with the correct production URL).*
 
 ---
 
@@ -102,10 +111,16 @@ docker-compose exec app python scripts/import_mappings.py filesink filesink_mapp
 
 You can also manage mappings at runtime via the REST API without restarting the service:
 
-- `POST /mapping/user` with `{ "external_id": "U123", "internal_id": "john.doe" }`
-- `POST /mapping/channel` with `{ "external_id": "C12345678", "internal_id": "hybvehsr" }`
-- `POST /mapping/import?type=user` with `{ "csv_content": "..." }`
-- `POST /mapping/import?type=channel` with `{ "csv_content": "..." }`
+- **Add/Update Mappings:**
+  - `POST /mapping/user` with `{ "external_id": "U123", "internal_id": "john.doe" }`
+  - `POST /mapping/channel` with `{ "external_id": "C12345678", "internal_id": "hybvehsr" }`
+  - `POST /mapping/filesink` with `{ "external_id": "talk", "internal_id": "sink_room_token" }`
+- **Import Mappings (CSV):**
+  - `POST /mapping/import?type=user` with `{ "csv_content": "..." }`
+  - `POST /mapping/import?type=channel` with `{ "csv_content": "..." }`
+- **Delete/Unmap Mappings:**
+  - `DELETE /mapping/user/{slack_user_id}` (e.g. `DELETE /mapping/user/U123`)
+  - `DELETE /mapping/channel/{slack_channel_id}` (e.g. `DELETE /mapping/channel/C12345678`)
 
 ---
 
