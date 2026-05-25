@@ -58,15 +58,15 @@ app = FastAPI(title="Nextcloud-Slack Bridge", version="1.0.0", lifespan=lifespan
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     body = await request.body()
-    logger.info(f"DEBUG: Incoming Request: {request.method} {request.url}")
-    logger.info(f"DEBUG: Headers: {dict(request.headers)}")
+    logger.debug(f"DEBUG: Incoming Request: {request.method} {request.url}")
+    logger.debug(f"DEBUG: Headers: {dict(request.headers)}")
     if body:
-        logger.info(f"DEBUG: Body: {body.decode('utf-8', errors='ignore')}")
+        logger.debug(f"DEBUG: Body: {body.decode('utf-8', errors='ignore')}")
     async def receive():
         return {"type": "http.request", "body": body}
     request._receive = receive
     response = await call_next(request)
-    logger.info(f"DEBUG: Response: status_code={response.status_code} url={request.url}")
+    logger.debug(f"DEBUG: Response: status_code={response.status_code} url={request.url}")
     return response
 
 # Register Routes
