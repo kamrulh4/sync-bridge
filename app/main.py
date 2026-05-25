@@ -18,8 +18,12 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Create tables (In production, use migrations)
+    from sqlalchemy import text
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Auto-patch DB schema for new thread mapping columns if they don't exist
+        await conn.execute(text("ALTER TABLE message_mappings ADD COLUMN IF NOT EXISTS parent_slack_ts VARCHAR(50);"))
+        await conn.execute(text("ALTER TABLE message_mappings ADD COLUMN IF NOT EXISTS parent_talk_id VARCHAR(50);"))
 
     if settings.AUTO_IMPORT_MAPPINGS:
         from pathlib import Path
