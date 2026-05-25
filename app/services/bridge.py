@@ -86,19 +86,26 @@ class BridgeService:
             text = text.replace(f"<@{slack_id}>", replacement)
         return text
 
-    async def post_to_nextcloud(self, room_token: str, message: str) -> str | None:
+    async def post_to_nextcloud(self, room_token: str, message: str, reply_to: str | None = None) -> str | None:
         """Posts a message to Nextcloud Talk room and returns message ID."""
         url = f"{settings.NEXTCLOUD_URL}/ocs/v2.php/apps/spreed/api/v1/chat/{room_token}?format=json"
         auth = (settings.NEXTCLOUD_BOT_USERNAME, settings.NEXTCLOUD_BOT_PASSWORD)
-        logger.info(f"Posting to Nextcloud: url={url} room={room_token} message_preview={message[:80]}")
+        logger.info(f"Posting to Nextcloud: url={url} room={room_token} message_preview={message[:80]} reply_to={reply_to}")
         logger.info(f"Request metadata: auth_user={auth[0]} headers={{'OCS-APIRequest': 'true'}}")
+
+        payload = {"message": message}
+        if reply_to:
+            try:
+                payload["replyTo"] = int(reply_to)
+            except ValueError:
+                payload["replyTo"] = reply_to
 
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(
                     url,
                     auth=auth,
-                    json={"message": message},
+                    json=payload,
                     headers={"OCS-APIRequest": "true"},
                 )
                 logger.info(f"Nextcloud response status: {response.status_code}")
@@ -116,15 +123,19 @@ class BridgeService:
                 logger.error(f"Exception raised during post_to_nextcloud: {str(e)}")
                 return None
 
-    async def post_to_slack(self, channel_id: str, message: str) -> str | None:
+    async def post_to_slack(self, channel_id: str, message: str, thread_ts: str | None = None) -> str | None:
         """Posts a message to Slack channel and returns timestamp."""
         url = "https://slack.com/api/chat.postMessage"
         headers = {"Authorization": f"Bearer {settings.SLACK_BOT_TOKEN}"}
-        logger.info(f"Posting to Slack: channel={channel_id} message={message}")
+        logger.info(f"Posting to Slack: channel={channel_id} message={message} thread_ts={thread_ts}")
+
+        payload = {"channel": channel_id, "text": message}
+        if thread_ts:
+            payload["thread_ts"] = thread_ts
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                url, headers=headers, json={"channel": channel_id, "text": message}
+                url, headers=headers, json=payload
             )
             data = response.json()
             logger.info(f"Slack response: {data}")
@@ -198,10 +209,10 @@ class BridgeService:
         await self.post_to_slack(target_channel, message)
 
     async def handle_slack_message(
-        self, slack_user_id: str, channel_id: str, text: str, slack_ts: str
+        self, slack_user_id: str, channel_id: str, text: str, slack_ts: str, thread_ts: str | None = None
     ):
         """Processes a message from Slack and sends to Nextcloud."""
-        logger.info(f"Handling Slack message: slack_user_id={slack_user_id} channel_id={channel_id} slack_ts={slack_ts} text={text}")
+        logger.info(f"Handling Slack message: slack_user_id={slack_user_id} channel_id={channel_id} slack_ts={slack_ts} thread_ts={thread_ts} text={text}")
         nc_room_token = await MappingService.get_internal_id(
             self.session, channel_id, MappingType.CHANNEL
         )
@@ -211,6 +222,11 @@ class BridgeService:
             else:
                 logger.info(f"Slack message ignored: channel {channel_id} not mapped")
                 return
+
+        parent_talk_id = None
+        if thread_ts and thread_ts != slack_ts:
+            parent_talk_id = await MappingService.get_talk_id_by_slack_ts(self.session, thread_ts)
+            logger.info(f"Slack message is a reply to thread {thread_ts}, mapped to parent_talk_id={parent_talk_id}")
 
         nc_username = await MappingService.get_internal_id(
             self.session, slack_user_id, MappingType.USER
@@ -224,8 +240,11 @@ class BridgeService:
         text = self.convert_emojis(text)
         text = await self.translate_slack_mentions(text)
 
+        # Scoped deduplication to prevent matching other threads
+        dedup_thread_suffix = f":{parent_talk_id}" if parent_talk_id else ""
+
         # Check if this message was recently bridged from Nextcloud (race condition & loopback protection)
-        nc_dedup_key = f"nextcloud:{nc_room_token}:{text}"
+        nc_dedup_key = f"nextcloud:{nc_room_token}{dedup_thread_suffix}:{text}"
         if await self.dedup.is_content_duplicate(nc_dedup_key):
             logger.info(f"Skipping loopback message from Nextcloud: {text[:80]}")
             return
@@ -238,15 +257,20 @@ class BridgeService:
         formatted_message = f"[{display_name} via Slack]: {text}"
         logger.info(f"Formatted Slack->Nextcloud message: {formatted_message}")
 
-        dedup_key = f"slack:{nc_room_token}:{formatted_message}"
+        dedup_key = f"slack:{nc_room_token}{dedup_thread_suffix}:{formatted_message}"
         if await self.dedup.is_content_duplicate(dedup_key):
             logger.info(f"Skipping duplicate Slack message to Nextcloud: {formatted_message[:80]}")
             return
 
-        nc_msg_id = await self.post_to_nextcloud(nc_room_token, formatted_message)
+        nc_msg_id = await self.post_to_nextcloud(nc_room_token, formatted_message, reply_to=parent_talk_id)
         if nc_msg_id:
             await MappingService.save_message_mapping(
-                self.session, slack_ts, nc_msg_id, channel_id
+                self.session,
+                slack_ts,
+                nc_msg_id,
+                channel_id,
+                parent_slack_ts=thread_ts if thread_ts != slack_ts else None,
+                parent_talk_id=parent_talk_id,
             )
             self.session.add(
                 AuditLog(source="slack", event_id=slack_ts, content=formatted_message[:255], status="success")
@@ -261,14 +285,22 @@ class BridgeService:
         await self.session.commit()
 
     async def handle_nextcloud_message(
-        self, nc_actor_id: str, room_token: str, text: str, nc_msg_id: str
+        self, nc_actor_id: str, room_token: str, text: str, nc_msg_id: str, parent_talk_id: str | None = None
     ):
         """Processes a message from Nextcloud and sends to Slack."""
         username = nc_actor_id.replace("users/", "")
         formatted_message = f"[{username} via Nextcloud]: {text}"
-        logger.info(f"Handling Nextcloud message: actor={nc_actor_id} room={room_token} nc_msg_id={nc_msg_id} text={text}")
+        logger.info(f"Handling Nextcloud message: actor={nc_actor_id} room={room_token} nc_msg_id={nc_msg_id} parent_talk_id={parent_talk_id} text={text}")
 
-        dedup_key = f"nextcloud:{room_token}:{formatted_message}"
+        parent_slack_ts = None
+        if parent_talk_id:
+            parent_slack_ts = await MappingService.get_slack_ts_by_talk_id(self.session, parent_talk_id)
+            logger.info(f"Nextcloud message is a reply to message {parent_talk_id}, mapped to parent_slack_ts={parent_slack_ts}")
+
+        # Scoped deduplication to prevent matching other threads
+        dedup_thread_suffix = f":{parent_slack_ts}" if parent_slack_ts else ""
+
+        dedup_key = f"nextcloud:{room_token}{dedup_thread_suffix}:{formatted_message}"
         if await self.dedup.is_content_duplicate(dedup_key):
             logger.info(f"Ignoring loopback message from Nextcloud: {formatted_message[:80]}...")
             return
@@ -283,10 +315,15 @@ class BridgeService:
                 logger.info(f"Nextcloud message ignored: room {room_token} not mapped to Slack")
                 return
 
-        slack_ts = await self.post_to_slack(slack_channel_id, formatted_message)
+        slack_ts = await self.post_to_slack(slack_channel_id, formatted_message, thread_ts=parent_slack_ts)
         if slack_ts:
             await MappingService.save_message_mapping(
-                self.session, slack_ts, nc_msg_id, room_token
+                self.session,
+                slack_ts,
+                nc_msg_id,
+                room_token,
+                parent_slack_ts=parent_slack_ts,
+                parent_talk_id=parent_talk_id if parent_talk_id else None,
             )
             self.session.add(
                 AuditLog(source="nextcloud", event_id=nc_msg_id, content=formatted_message[:255], status="success")

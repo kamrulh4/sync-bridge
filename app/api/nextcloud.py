@@ -185,9 +185,21 @@ async def nextcloud_webhook(
             logger.info(f"NC webhook: IGNORED (bot actor loopback message: {text[:80]})")
             return {"status": "ignored"}
 
-        logger.info(f"NC webhook: queuing Nextcloud message task: actor={actor_id} room={room_token} msg_id={obj.get('id')} text={text}")
+        # Extract parent thread ID for replies (nested or flat inReplyTo format)
+        parent_talk_id = None
+        in_reply_to = obj.get("inReplyTo")
+        if in_reply_to:
+            if isinstance(in_reply_to, dict):
+                parent_talk_id = in_reply_to.get("object", {}).get("id") if isinstance(in_reply_to.get("object"), dict) else in_reply_to.get("id")
+            else:
+                parent_talk_id = str(in_reply_to)
+
+        if parent_talk_id:
+            parent_talk_id = str(parent_talk_id)
+
+        logger.info(f"NC webhook: queuing Nextcloud message task: actor={actor_id} room={room_token} msg_id={obj.get('id')} parent_talk_id={parent_talk_id} text={text}")
         background_tasks.add_task(
-            handle_nextcloud_message_task, actor_id, room_token, text, obj.get("id"), dedup
+            handle_nextcloud_message_task, actor_id, room_token, text, obj.get("id"), parent_talk_id, dedup
         )
 
     # 6. Handle Direct File Uploads (non-Note objects)
@@ -204,12 +216,14 @@ async def nextcloud_webhook(
     return {"status": "ok"}
 
 
-async def handle_nextcloud_message_task(actor_id: str, room_token: str, text: str, nc_msg_id: str, dedup: DeduplicationService):
+async def handle_nextcloud_message_task(
+    actor_id: str, room_token: str, text: str, nc_msg_id: str, parent_talk_id: str | None, dedup: DeduplicationService
+):
     from app.core.database import async_session
 
     async with async_session() as session:
         bridge = BridgeService(session, dedup)
-        await bridge.handle_nextcloud_message(actor_id, room_token, text, nc_msg_id)
+        await bridge.handle_nextcloud_message(actor_id, room_token, text, nc_msg_id, parent_talk_id)
 
 
 async def handle_nextcloud_file_task(actor_id: str, room_token: str, file_name: str, file_link: str, dedup: DeduplicationService):

@@ -32,11 +32,20 @@ class MappingService:
 
     @staticmethod
     async def save_message_mapping(
-        session: AsyncSession, slack_ts: str, talk_msg_id: str, channel_id: str
+        session: AsyncSession,
+        slack_ts: str,
+        talk_msg_id: str,
+        channel_id: str,
+        parent_slack_ts: str | None = None,
+        parent_talk_id: str | None = None,
     ):
-        """Saves a link between Slack and Nextcloud messages."""
+        """Saves a link between Slack and Nextcloud messages with parent relationship."""
         mapping = MessageMapping(
-            slack_ts=slack_ts, talk_msg_id=str(talk_msg_id), channel_id=channel_id
+            slack_ts=slack_ts,
+            talk_msg_id=str(talk_msg_id),
+            channel_id=channel_id,
+            parent_slack_ts=parent_slack_ts,
+            parent_talk_id=parent_talk_id,
         )
         session.add(mapping)
         # Commit is handled by the caller

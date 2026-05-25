@@ -71,15 +71,17 @@ async def slack_events(
             text = event.get("text")
             user = event.get("user")
             ts = event.get("ts")
-            logger.info(f"Slack message payload: user={user} ts={ts} text={text}")
-            background_tasks.add_task(handle_slack_message_task, user, channel, text, ts, dedup)
+            thread_ts = event.get("thread_ts")
+            logger.info(f"Slack message payload: user={user} ts={ts} thread_ts={thread_ts} text={text}")
+            background_tasks.add_task(handle_slack_message_task, user, channel, text, ts, thread_ts, dedup)
         elif subtype == "file_share":
             text = event.get("text") or ""
             logger.info(f"Slack file_share message payload: text={text}")
             if text.strip():
                 user = event.get("user")
                 ts = event.get("ts")
-                background_tasks.add_task(handle_slack_message_task, user, channel, text, ts, dedup)
+                thread_ts = event.get("thread_ts")
+                background_tasks.add_task(handle_slack_message_task, user, channel, text, ts, thread_ts, dedup)
 
     # 5. Handle File Event
     elif event.get("type") == "file_shared":
@@ -111,12 +113,12 @@ async def slack_events(
     return {"ok": True}
 
 
-async def handle_slack_message_task(user: str, channel: str, text: str, ts: str, dedup: DeduplicationService):
+async def handle_slack_message_task(user: str, channel: str, text: str, ts: str, thread_ts: str | None, dedup: DeduplicationService):
     from app.core.database import async_session
 
     async with async_session() as session:
         bridge = BridgeService(session, dedup)
-        await bridge.handle_slack_message(user, channel, text, ts)
+        await bridge.handle_slack_message(user, channel, text, ts, thread_ts)
 
 
 async def handle_slack_file_task(file_id: str, user_id: str, channel_id: str, dedup: DeduplicationService):

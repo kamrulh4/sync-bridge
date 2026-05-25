@@ -40,5 +40,7 @@ class MessageMapping(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     slack_ts: Mapped[str] = mapped_column(String(50), index=True)
     talk_msg_id: Mapped[str] = mapped_column(String(50), index=True)
-    channel_id: Mapped[str] = mapped_column(String(255), index=True) # Nextcloud room token or Slack channel ID
+    channel_id: Mapped[str] = mapped_column(String(255), index=True)  # Nextcloud room token or Slack channel ID
+    parent_slack_ts: Mapped[str | None] = mapped_column(String(50), nullable=True)  # thread reply parent TS (Slack)
+    parent_talk_id: Mapped[str | None] = mapped_column(String(50), nullable=True)   # thread reply parent ID (Nextcloud)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

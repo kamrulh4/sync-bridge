@@ -54,3 +54,50 @@ async def test_nextcloud_webhook_basic():
         response = await ac.post("/nextcloud/webhook", json=payload)
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+@pytest.mark.asyncio
+async def test_slack_thread_reply_webhook():
+    import time
+    ts = f"{time.time()}"
+    payload = {
+        "type": "event_callback",
+        "event_id": f"evt_{int(time.time() * 1000)}",
+        "event": {
+            "type": "message",
+            "user": "U12345",
+            "text": "Reply from Slack in a thread",
+            "ts": ts,
+            "thread_ts": "1779432716.715169",
+            "channel": "C02C4U6ER3K"
+        }
+    }
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.post("/slack/events", json=payload)
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+@pytest.mark.asyncio
+async def test_nextcloud_thread_reply_webhook():
+    import time
+    unique_id = f"msg_{int(time.time() * 1000)}"
+    payload = {
+        "type": "Create",
+        "actor": {"id": "users/admin"},
+        "object": {
+            "type": "Note",
+            "id": unique_id,
+            "content": "Reply from Nextcloud in a thread",
+            "inReplyTo": {
+                "type": "Note",
+                "object": {
+                    "type": "Note",
+                    "id": "2571"
+                }
+            }
+        },
+        "target": {"id": "hybvehsr"}
+    }
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.post("/nextcloud/webhook", json=payload)
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
