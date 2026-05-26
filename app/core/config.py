@@ -23,6 +23,7 @@ class Settings(BaseSettings):
 
     # Database & Redis
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@db:5432/bridge"
+    TEST_DATABASE_URL: str | None = None
     REDIS_URL: str = "redis://redis:6379/0"
 
     # App Settings
